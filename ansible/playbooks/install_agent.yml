@@ -1,0 +1,45 @@
+---
+# Установка infrahub-agent на удалённый Linux-хост (systemd).
+# Переменные: infrahub_server, infrahub_agent_name, infrahub_agent_download_url, infrahub_agent_install_path
+- name: Install InfraHub agent
+  hosts: all
+  become: true
+  vars:
+    infrahub_agent_install_path: /usr/local/bin/infrahub-agent
+    infrahub_agent_state_dir: /var/lib/infrahub-agent
+  tasks:
+    - name: Ensure state directory exists
+      ansible.builtin.file:
+        path: "{{ infrahub_agent_state_dir }}"
+        state: directory
+        mode: "0755"
+
+    - name: Download agent binary
+      ansible.builtin.get_url:
+        url: "{{ infrahub_agent_download_url }}"
+        dest: "{{ infrahub_agent_install_path }}"
+        mode: "0755"
+        force: true
+      when: infrahub_agent_download_url | length > 0
+
+    - name: Deploy environment file
+      ansible.builtin.template:
+        src: infrahub-agent.env.j2
+        dest: /etc/default/infrahub-agent
+        mode: "0600"
+
+    - name: Install systemd unit
+      ansible.builtin.template:
+        src: infrahub-agent.service.j2
+        dest: /etc/systemd/system/infrahub-agent.service
+        mode: "0644"
+
+    - name: Reload systemd
+      ansible.builtin.systemd:
+        daemon_reload: true
+
+    - name: Enable and start agent
+      ansible.builtin.systemd:
+        name: infrahub-agent
+        enabled: true
+        state: started

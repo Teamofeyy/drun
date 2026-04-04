@@ -1,0 +1,15 @@
+[Unit]
+Description=InfraHub Agent
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+EnvironmentFile=/etc/default/infrahub-agent
+WorkingDirectory={{ infrahub_agent_state_dir }}
+ExecStart={{ infrahub_agent_install_path }}
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

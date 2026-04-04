@@ -1,14 +1,11 @@
 import type { TaskResult } from '@/api'
+import { isRecord } from '@/lib/guards'
 import { cn } from '@/lib/utils'
 
 type Props = {
   kind: string
   result: TaskResult | null | undefined
   taskError: string | null | undefined
-}
-
-function isRecord(v: unknown): v is Record<string, unknown> {
-  return v !== null && typeof v === 'object' && !Array.isArray(v)
 }
 
 export function TaskResultView({ kind, result, taskError }: Props) {

@@ -167,6 +167,12 @@ export const api = {
   topologyGraph() {
     return apiFetch('/api/v1/topology/graph') as Promise<TopologyGraph>
   },
+  provisionAgent(body: ProvisionAgentRequest) {
+    return apiFetch('/api/v1/admin/provision-agent', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }) as Promise<ProvisionAgentResponse>
+  },
   machineDiff(agentId: string, fromTask: string, toTask: string) {
     return apiFetch(
       `/api/v1/agents/${agentId}/machine-diff?from_task=${encodeURIComponent(fromTask)}&to_task=${encodeURIComponent(toTask)}`,
@@ -289,6 +295,25 @@ export type GroupsResponse = {
   by_site: Record<string, number>
   by_segment: Record<string, number>
   by_role_tag: Record<string, number>
+}
+
+export type ProvisionAgentRequest = {
+  host: string
+  ssh_user: string
+  ssh_port?: number
+  agent_name: string
+  infrahub_api_base: string
+  agent_download_url?: string | null
+  private_key_pem?: string | null
+  ssh_password?: string | null
+}
+
+export type ProvisionAgentResponse = {
+  ok: boolean
+  exit_code: number | null
+  stdout: string
+  stderr: string
+  message: string
 }
 
 export type TopologyNode = {
