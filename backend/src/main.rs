@@ -23,6 +23,8 @@ use axum::{
     Router,
 };
 use tower_http::{cors::CorsLayer, trace::TraceLayer};
+use utoipa::OpenApi;
+use utoipa_swagger_ui::SwaggerUi;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -50,6 +52,10 @@ async fn main() -> anyhow::Result<()> {
     };
 
     let app = Router::new()
+        .merge(
+            SwaggerUi::new("/swagger-ui")
+                .url("/api-docs/openapi.json", handlers::ApiDoc::openapi()),
+        )
         .route("/health", get(handlers::health))
         .route("/api/v1/auth/login", post(handlers::login))
         .route("/api/v1/me", get(handlers::current_user))
