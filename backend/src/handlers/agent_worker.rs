@@ -24,6 +24,18 @@ use crate::{
 
 use super::resolve_agent;
 
+#[utoipa::path(
+    post,
+    path = "/api/v1/agent/register",
+    tag = "Agents",
+    description = "Регистрация нового агента; в ответе выдаётся одноразовый токен.",
+    request_body = RegisterAgentRequest,
+    responses(
+        (status = 201, description = "Агент создан, токен в теле ответа", body = RegisterAgentResponse),
+        (status = 400, description = "Пустое имя и т.п.", body = serde_json::Value),
+        (status = 500, description = "Внутренняя ошибка", body = serde_json::Value),
+    )
+)]
 pub async fn register_agent(
     State(state): State<AppState>,
     Json(body): Json<RegisterAgentRequest>,
@@ -60,6 +72,19 @@ pub async fn register_agent(
     }))
 }
 
+#[utoipa::path(
+    post,
+    path = "/api/v1/agent/heartbeat",
+    tag = "Agents",
+    description = "Heartbeat агента по токену в Authorization: Bearer.",
+    security(("bearerAuth" = [])),
+    responses(
+        (status = 200, description = "Статус обновлён", body = serde_json::Value),
+        (status = 401, description = "Нет или невалидный токен агента", body = serde_json::Value),
+        (status = 404, description = "Агент не найден", body = serde_json::Value),
+        (status = 500, description = "Внутренняя ошибка", body = serde_json::Value),
+    )
+)]
 pub async fn agent_heartbeat(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -84,6 +109,18 @@ pub async fn agent_heartbeat(
     Ok(Json(json!({ "ok": true, "agent_id": agent_id })))
 }
 
+#[utoipa::path(
+    get,
+    path = "/api/v1/agent/tasks/next",
+    tag = "Agents",
+    description = "Следующая задача из очереди для агента; тело может быть null, если задач нет.",
+    security(("bearerAuth" = [])),
+    responses(
+        (status = 200, description = "Задача или null", body = serde_json::Value),
+        (status = 401, description = "Нет или невалидный токен агента", body = serde_json::Value),
+        (status = 500, description = "Внутренняя ошибка", body = serde_json::Value),
+    )
+)]
 pub async fn agent_next_task(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -148,6 +185,24 @@ pub async fn agent_next_task(
     Ok(Json(Some(task.into())))
 }
 
+#[utoipa::path(
+    post,
+    path = "/api/v1/agent/tasks/{id}/complete",
+    tag = "Agents",
+    description = "Завершение задачи агентом: результат, логи, переход в done.",
+    security(("bearerAuth" = [])),
+    params(
+        ("id" = Uuid, Path, description = "Идентификатор задачи"),
+    ),
+    request_body = CompleteTaskRequest,
+    responses(
+        (status = 200, description = "Результат сохранён", body = serde_json::Value),
+        (status = 401, description = "Нет или невалидный токен агента", body = serde_json::Value),
+        (status = 403, description = "Задача назначена другому агенту", body = serde_json::Value),
+        (status = 404, description = "Задача не найдена", body = serde_json::Value),
+        (status = 500, description = "Внутренняя ошибка", body = serde_json::Value),
+    )
+)]
 pub async fn agent_complete_task(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
@@ -224,6 +279,23 @@ pub async fn agent_complete_task(
     Ok(Json(json!({ "ok": true, "result_id": rid })))
 }
 
+#[utoipa::path(
+    post,
+    path = "/api/v1/agent/tasks/{id}/fail",
+    tag = "Agents",
+    description = "Сообщение об ошибке выполнения; возможен повтор в очереди до исчерпания лимита.",
+    security(("bearerAuth" = [])),
+    params(
+        ("id" = Uuid, Path, description = "Идентификатор задачи"),
+    ),
+    request_body = serde_json::Value,
+    responses(
+        (status = 200, description = "Статус обработан (retry или failed)", body = serde_json::Value),
+        (status = 401, description = "Нет или невалидный токен агента", body = serde_json::Value),
+        (status = 404, description = "Задача не найдена или не в running", body = serde_json::Value),
+        (status = 500, description = "Внутренняя ошибка", body = serde_json::Value),
+    )
+)]
 pub async fn agent_fail_task(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,

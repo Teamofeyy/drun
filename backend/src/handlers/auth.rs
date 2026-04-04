@@ -16,10 +16,32 @@ use crate::{
     state::AppState,
 };
 
+#[utoipa::path(
+    get,
+    path = "/health",
+    tag = "Health",
+    description = "Проверка доступности сервиса (liveness).",
+    responses(
+        (status = 200, description = "Сервис работает", body = serde_json::Value),
+        (status = 500, description = "Внутренняя ошибка", body = serde_json::Value),
+    )
+)]
 pub async fn health() -> Json<serde_json::Value> {
     Json(json!({ "status": "ok" }))
 }
 
+#[utoipa::path(
+    post,
+    path = "/api/v1/auth/login",
+    tag = "Auth",
+    description = "Выдача JWT по логину и паролю пользователя.",
+    request_body = LoginRequest,
+    responses(
+        (status = 200, description = "Токен выдан", body = LoginResponse),
+        (status = 401, description = "Неверные учётные данные", body = serde_json::Value),
+        (status = 500, description = "Внутренняя ошибка", body = serde_json::Value),
+    )
+)]
 pub async fn login(
     State(state): State<AppState>,
     Json(body): Json<LoginRequest>,
@@ -55,6 +77,18 @@ pub async fn login(
     }))
 }
 
+#[utoipa::path(
+    get,
+    path = "/api/v1/me",
+    tag = "Auth",
+    description = "Текущий пользователь по JWT из заголовка Authorization.",
+    security(("bearerAuth" = [])),
+    responses(
+        (status = 200, description = "Профиль пользователя", body = MeResponse),
+        (status = 401, description = "Нет или невалидный токен", body = serde_json::Value),
+        (status = 500, description = "Внутренняя ошибка", body = serde_json::Value),
+    )
+)]
 pub async fn current_user(
     State(state): State<AppState>,
     headers: HeaderMap,

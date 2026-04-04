@@ -1,10 +1,11 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
+use utoipa::ToSchema;
 use uuid::Uuid;
 
 use crate::entity;
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, ToSchema)]
 pub struct AgentRow {
     pub id: Uuid,
     pub name: String,
@@ -31,7 +32,7 @@ impl From<entity::agents::Model> for AgentRow {
     }
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ToSchema)]
 pub struct AgentPublic {
     pub id: Uuid,
     pub name: String,
@@ -43,7 +44,7 @@ pub struct AgentPublic {
     pub role_tag: String,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, ToSchema)]
 pub struct TaskRow {
     pub id: Uuid,
     pub agent_id: Uuid,
@@ -76,7 +77,7 @@ impl From<entity::tasks::Model> for TaskRow {
     }
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ToSchema)]
 pub struct TaskResultRow {
     pub id: Uuid,
     pub task_id: Uuid,
@@ -103,7 +104,7 @@ impl From<entity::task_results::Model> for TaskResultRow {
     }
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ToSchema)]
 pub struct TaskLogRow {
     pub id: i64,
     pub task_id: Uuid,
@@ -124,13 +125,13 @@ impl From<entity::task_logs::Model> for TaskLogRow {
     }
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, ToSchema)]
 pub struct LoginRequest {
     pub username: String,
     pub password: String,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ToSchema)]
 pub struct LoginResponse {
     pub token: String,
     pub token_type: &'static str,
@@ -138,12 +139,12 @@ pub struct LoginResponse {
     pub role: String,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, ToSchema)]
 pub struct RegisterAgentRequest {
     pub name: String,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ToSchema)]
 pub struct RegisterAgentResponse {
     pub agent_id: Uuid,
     pub token: String,
@@ -154,7 +155,7 @@ fn default_max_retries() -> i32 {
     2
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, ToSchema)]
 pub struct CreateTaskRequest {
     pub agent_id: Uuid,
     pub kind: String,
@@ -165,7 +166,7 @@ pub struct CreateTaskRequest {
     pub max_retries: i32,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, ToSchema)]
 pub struct CompleteTaskRequest {
     pub stdout: Option<String>,
     pub stderr: Option<String>,
@@ -178,13 +179,13 @@ pub struct CompleteTaskRequest {
     pub summary: Option<String>,
 }
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Deserialize, Serialize, ToSchema)]
 pub struct LogLine {
     pub level: String,
     pub message: String,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, ToSchema)]
 pub struct PatchAgentRequest {
     #[serde(default)]
     pub site: Option<String>,
@@ -194,14 +195,14 @@ pub struct PatchAgentRequest {
     pub role_tag: Option<String>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ToSchema)]
 pub struct MeResponse {
     pub id: Uuid,
     pub username: String,
     pub role: String,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, ToSchema)]
 pub struct AdminWipeBody {
     /// Должно быть ровно `DELETE_ALL_TASK_HISTORY`
     pub confirm: String,

@@ -17,6 +17,18 @@ use crate::{
 
 use super::mark_stale_offline;
 
+#[utoipa::path(
+    get,
+    path = "/api/v1/agents",
+    tag = "Agents",
+    description = "Список зарегистрированных агентов (после обновления статусов по таймауту).",
+    security(("bearerAuth" = [])),
+    responses(
+        (status = 200, description = "Список агентов", body = [AgentPublic]),
+        (status = 401, description = "Нет или невалидный токен", body = serde_json::Value),
+        (status = 500, description = "Внутренняя ошибка", body = serde_json::Value),
+    )
+)]
 pub async fn list_agents(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -50,6 +62,25 @@ pub async fn list_agents(
     Ok(Json(out))
 }
 
+#[utoipa::path(
+    patch,
+    path = "/api/v1/agents/{id}",
+    tag = "Agents",
+    description = "Частичное обновление метаданных агента (площадка, сегмент, тег роли). Требуется роль operator+.",
+    security(("bearerAuth" = [])),
+    params(
+        ("id" = Uuid, Path, description = "Идентификатор агента"),
+    ),
+    request_body = PatchAgentRequest,
+    responses(
+        (status = 200, description = "Обновлённый агент", body = AgentPublic),
+        (status = 400, description = "Некорректный запрос", body = serde_json::Value),
+        (status = 401, description = "Нет или невалидный токен", body = serde_json::Value),
+        (status = 403, description = "Недостаточно прав", body = serde_json::Value),
+        (status = 404, description = "Агент не найден", body = serde_json::Value),
+        (status = 500, description = "Внутренняя ошибка", body = serde_json::Value),
+    )
+)]
 pub async fn patch_agent(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
