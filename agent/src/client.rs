@@ -63,6 +63,7 @@ pub async fn run_loop(server: &str, token: &str, heartbeat_secs: u64) -> anyhow:
                                     "exit_code": out.exit_code,
                                     "data": out.data,
                                     "logs": logs,
+                                    "summary": out.summary,
                                 });
                                 let resp = client
                                     .post(&url)

@@ -36,6 +36,31 @@ async function apiFetch(path: string, init: RequestInit = {}) {
   return JSON.parse(text)
 }
 
+/** 404 → null, без редиректа на логин для «ещё нет результата» */
+async function apiFetchMaybe(path: string): Promise<unknown | null> {
+  const token = getToken()
+  const headers = new Headers()
+  headers.set('Content-Type', 'application/json')
+  if (token) {
+    headers.set('Authorization', `Bearer ${token}`)
+  }
+  const res = await fetch(path, { headers })
+  if (res.status === 404) return null
+  if (res.status === 401) {
+    clearToken()
+    window.location.href = '/'
+    throw new Error('unauthorized')
+  }
+  if (!res.ok) {
+    const j = await res.json().catch(() => ({}))
+    const msg = (j as { error?: string }).error ?? res.statusText
+    throw new Error(msg)
+  }
+  const text = await res.text()
+  if (!text) return null
+  return JSON.parse(text)
+}
+
 export const api = {
   login(username: string, password: string) {
     return apiFetch('/api/v1/auth/login', {
@@ -49,11 +74,24 @@ export const api = {
   tasks() {
     return apiFetch('/api/v1/tasks') as Promise<Task[]>
   },
-  createTask(agent_id: string, kind: string, payload: unknown) {
+  createTask(
+    agent_id: string,
+    kind: string,
+    payload: unknown,
+    max_retries?: number,
+  ) {
     return apiFetch('/api/v1/tasks', {
       method: 'POST',
-      body: JSON.stringify({ agent_id, kind, payload }),
+      body: JSON.stringify({
+        agent_id,
+        kind,
+        payload,
+        ...(max_retries !== undefined ? { max_retries } : {}),
+      }),
     }) as Promise<Task>
+  },
+  metricsSummary() {
+    return apiFetch('/api/v1/metrics/summary') as Promise<MetricsSummary>
   },
   task(id: string) {
     return apiFetch(`/api/v1/tasks/${id}`) as Promise<Task>
@@ -61,8 +99,12 @@ export const api = {
   taskResult(id: string) {
     return apiFetch(`/api/v1/tasks/${id}/result`) as Promise<TaskResult>
   },
-  taskLogs(id: string) {
-    return apiFetch(`/api/v1/tasks/${id}/logs`) as Promise<TaskLog[]>
+  /** null если результат ещё не записан */
+  taskResultMaybe(id: string) {
+    return apiFetchMaybe(`/api/v1/tasks/${id}/result`) as Promise<TaskResult | null>
+  },
+  taskLogsMaybe(id: string) {
+    return apiFetchMaybe(`/api/v1/tasks/${id}/logs`) as Promise<TaskLog[] | null>
   },
 }
 
@@ -84,6 +126,8 @@ export type Task = {
   started_at: string | null
   completed_at: string | null
   error_message: string | null
+  retries_used: number
+  max_retries: number
 }
 
 export type TaskResult = {
@@ -93,7 +137,16 @@ export type TaskResult = {
   stderr: string | null
   exit_code: number | null
   data: unknown
+  summary: string | null
   created_at: string
+}
+
+export type MetricsSummary = {
+  window_hours: number
+  tasks_by_status: Record<string, number>
+  avg_duration_seconds_done: number | null
+  agents_total: number
+  agents_online: number
 }
 
 export type TaskLog = {

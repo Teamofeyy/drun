@@ -25,6 +25,7 @@ const ALLOWED_TASK_KINDS: &[&str] = &[
     "port_check",
     "diagnostic",
     "network_reachability",
+    "check_bundle",
 ];
 
 fn bearer(headers: &HeaderMap) -> Option<String> {
@@ -168,6 +169,18 @@ pub async fn agent_next_task(
     })?;
     let agent_id = resolve_agent(&state, &token).await?;
 
+    let running: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*)::bigint FROM tasks WHERE agent_id = $1 AND status = 'running'",
+    )
+    .bind(agent_id)
+    .fetch_one(&state.pool)
+    .await
+    .map_err(|_| ApiError::new(StatusCode::INTERNAL_SERVER_ERROR, "database error"))?;
+
+    if running >= state.config.agent_max_concurrent_tasks {
+        return Ok(Json(None));
+    }
+
     let mut redis = state.redis.clone();
     let mut task_id = queue::dequeue(&mut redis, agent_id)
         .await
@@ -205,11 +218,13 @@ pub async fn agent_next_task(
         return Ok(Json(None));
     }
 
-    let task = sqlx::query_as::<_, TaskRow>("SELECT id, agent_id, kind, payload, status, created_at, started_at, completed_at, error_message FROM tasks WHERE id = $1")
-        .bind(tid)
-        .fetch_one(&state.pool)
-        .await
-        .map_err(|_| ApiError::new(StatusCode::INTERNAL_SERVER_ERROR, "database error"))?;
+    let task = sqlx::query_as::<_, TaskRow>(
+        "SELECT id, agent_id, kind, payload, status, created_at, started_at, completed_at, error_message, retries_used, max_retries FROM tasks WHERE id = $1",
+    )
+    .bind(tid)
+    .fetch_one(&state.pool)
+    .await
+    .map_err(|_| ApiError::new(StatusCode::INTERNAL_SERVER_ERROR, "database error"))?;
 
     Ok(Json(Some(task)))
 }
@@ -246,7 +261,7 @@ pub async fn agent_complete_task(
 
     let rid = Uuid::new_v4();
     sqlx::query(
-        "INSERT INTO task_results (id, task_id, stdout, stderr, exit_code, data) VALUES ($1, $2, $3, $4, $5, $6)",
+        "INSERT INTO task_results (id, task_id, stdout, stderr, exit_code, data, summary) VALUES ($1, $2, $3, $4, $5, $6, $7)",
     )
     .bind(rid)
     .bind(id)
@@ -254,6 +269,7 @@ pub async fn agent_complete_task(
     .bind(&body.stderr)
     .bind(body.exit_code)
     .bind(&body.data)
+    .bind(&body.summary)
     .execute(&mut *tx)
     .await
     .map_err(|_| ApiError::new(StatusCode::INTERNAL_SERVER_ERROR, "database error"))?;
@@ -296,34 +312,59 @@ pub async fn agent_fail_task(
     })?;
     let agent_id = resolve_agent(&state, &token).await?;
 
-    let owner: Option<Uuid> = sqlx::query_scalar("SELECT agent_id FROM tasks WHERE id = $1")
-        .bind(id)
-        .fetch_optional(&state.pool)
-        .await
-        .map_err(|_| ApiError::new(StatusCode::INTERNAL_SERVER_ERROR, "database error"))?;
-
-    let Some(oid) = owner else {
-        return Err(ApiError::new(StatusCode::NOT_FOUND, "task not found"));
-    };
-    if oid != agent_id {
-        return Err(ApiError::new(StatusCode::FORBIDDEN, "wrong agent"));
-    }
-
     let msg = body
         .get("message")
         .and_then(|v| v.as_str())
         .unwrap_or("failed");
 
-    sqlx::query(
-        "UPDATE tasks SET status = 'failed', completed_at = now(), error_message = $2 WHERE id = $1",
+    let row: Option<(i32, i32)> = sqlx::query_as(
+        "UPDATE tasks SET retries_used = retries_used + 1, error_message = $2 \
+         WHERE id = $1 AND agent_id = $3 AND status = 'running' \
+         RETURNING retries_used, max_retries",
     )
     .bind(id)
     .bind(msg)
-    .execute(&state.pool)
+    .bind(agent_id)
+    .fetch_optional(&state.pool)
     .await
     .map_err(|_| ApiError::new(StatusCode::INTERNAL_SERVER_ERROR, "database error"))?;
 
-    Ok(Json(json!({ "ok": true })))
+    let Some((retries_used, max_retries)) = row else {
+        return Err(ApiError::new(
+            StatusCode::NOT_FOUND,
+            "task not found or not running",
+        ));
+    };
+
+    if retries_used <= max_retries {
+        sqlx::query(
+            "UPDATE tasks SET status = 'pending', started_at = NULL, completed_at = NULL WHERE id = $1",
+        )
+        .bind(id)
+        .execute(&state.pool)
+        .await
+        .map_err(|_| ApiError::new(StatusCode::INTERNAL_SERVER_ERROR, "database error"))?;
+
+        let mut redis = state.redis.clone();
+        queue::enqueue(&mut redis, agent_id, id)
+            .await
+            .map_err(|e| {
+                tracing::error!(%e, "redis enqueue retry");
+                ApiError::new(StatusCode::INTERNAL_SERVER_ERROR, "queue error")
+            })?;
+
+        Ok(Json(json!({ "ok": true, "will_retry": true, "retries_used": retries_used })))
+    } else {
+        sqlx::query(
+            "UPDATE tasks SET status = 'failed', completed_at = now() WHERE id = $1",
+        )
+        .bind(id)
+        .execute(&state.pool)
+        .await
+        .map_err(|_| ApiError::new(StatusCode::INTERNAL_SERVER_ERROR, "database error"))?;
+
+        Ok(Json(json!({ "ok": true, "will_retry": false })))
+    }
 }
 
 pub async fn list_agents(
@@ -386,14 +427,17 @@ pub async fn create_task(
         return Err(ApiError::new(StatusCode::BAD_REQUEST, "unknown agent"));
     }
 
+    let max_retries = body.max_retries.clamp(0, 10);
+
     let id = Uuid::new_v4();
     sqlx::query(
-        "INSERT INTO tasks (id, agent_id, kind, payload, status) VALUES ($1, $2, $3, $4, 'pending')",
+        "INSERT INTO tasks (id, agent_id, kind, payload, status, max_retries) VALUES ($1, $2, $3, $4, 'pending', $5)",
     )
     .bind(id)
     .bind(body.agent_id)
     .bind(&body.kind)
     .bind(&body.payload)
+    .bind(max_retries)
     .execute(&state.pool)
     .await
     .map_err(|_| ApiError::new(StatusCode::INTERNAL_SERVER_ERROR, "database error"))?;
@@ -406,7 +450,9 @@ pub async fn create_task(
             ApiError::new(StatusCode::INTERNAL_SERVER_ERROR, "queue error")
         })?;
 
-    let task = sqlx::query_as::<_, TaskRow>("SELECT id, agent_id, kind, payload, status, created_at, started_at, completed_at, error_message FROM tasks WHERE id = $1")
+    let task = sqlx::query_as::<_, TaskRow>(
+        "SELECT id, agent_id, kind, payload, status, created_at, started_at, completed_at, error_message, retries_used, max_retries FROM tasks WHERE id = $1",
+    )
         .bind(id)
         .fetch_one(&state.pool)
         .await
@@ -422,7 +468,7 @@ pub async fn list_tasks(
     let _uid = resolve_user(&state, &headers).await?;
 
     let rows: Vec<TaskRow> = sqlx::query_as(
-        "SELECT id, agent_id, kind, payload, status, created_at, started_at, completed_at, error_message FROM tasks ORDER BY created_at DESC LIMIT 200",
+        "SELECT id, agent_id, kind, payload, status, created_at, started_at, completed_at, error_message, retries_used, max_retries FROM tasks ORDER BY created_at DESC LIMIT 200",
     )
     .fetch_all(&state.pool)
     .await
@@ -438,11 +484,13 @@ pub async fn get_task(
 ) -> Result<Json<TaskRow>, ApiError> {
     let _uid = resolve_user(&state, &headers).await?;
 
-    let task = sqlx::query_as::<_, TaskRow>("SELECT id, agent_id, kind, payload, status, created_at, started_at, completed_at, error_message FROM tasks WHERE id = $1")
-        .bind(id)
-        .fetch_optional(&state.pool)
-        .await
-        .map_err(|_| ApiError::new(StatusCode::INTERNAL_SERVER_ERROR, "database error"))?;
+    let task = sqlx::query_as::<_, TaskRow>(
+        "SELECT id, agent_id, kind, payload, status, created_at, started_at, completed_at, error_message, retries_used, max_retries FROM tasks WHERE id = $1",
+    )
+    .bind(id)
+    .fetch_optional(&state.pool)
+    .await
+    .map_err(|_| ApiError::new(StatusCode::INTERNAL_SERVER_ERROR, "database error"))?;
 
     let Some(task) = task else {
         return Err(ApiError::new(StatusCode::NOT_FOUND, "not found"));
@@ -458,7 +506,7 @@ pub async fn get_task_result(
     let _uid = resolve_user(&state, &headers).await?;
 
     let res = sqlx::query_as::<_, TaskResultRow>(
-        "SELECT id, task_id, stdout, stderr, exit_code, data, created_at FROM task_results WHERE task_id = $1",
+        "SELECT id, task_id, stdout, stderr, exit_code, data, summary, created_at FROM task_results WHERE task_id = $1",
     )
     .bind(id)
     .fetch_optional(&state.pool)
@@ -487,6 +535,53 @@ pub async fn get_task_logs(
     .map_err(|_| ApiError::new(StatusCode::INTERNAL_SERVER_ERROR, "database error"))?;
 
     Ok(Json(rows))
+}
+
+pub async fn metrics_summary(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    let _uid = resolve_user(&state, &headers).await?;
+
+    let by_status: Vec<(String, i64)> = sqlx::query_as(
+        "SELECT status, COUNT(*)::bigint FROM tasks WHERE created_at > now() - interval '24 hours' GROUP BY status ORDER BY status",
+    )
+    .fetch_all(&state.pool)
+    .await
+    .map_err(|_| ApiError::new(StatusCode::INTERNAL_SERVER_ERROR, "database error"))?;
+
+    let avg_sec: Option<f64> = sqlx::query_scalar(
+        "SELECT AVG(EXTRACT(EPOCH FROM (completed_at - started_at))) FROM tasks WHERE status = 'done' AND started_at IS NOT NULL AND completed_at IS NOT NULL AND completed_at > now() - interval '24 hours'",
+    )
+    .fetch_one(&state.pool)
+    .await
+    .ok()
+    .flatten();
+
+    let total_agents: i64 = sqlx::query_scalar("SELECT COUNT(*)::bigint FROM agents")
+        .fetch_one(&state.pool)
+        .await
+        .unwrap_or(0);
+
+    let online: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*)::bigint FROM agents WHERE status = 'online'",
+    )
+    .fetch_one(&state.pool)
+    .await
+    .unwrap_or(0);
+
+    let mut task_map = serde_json::Map::new();
+    for (k, v) in by_status {
+        task_map.insert(k, json!(v));
+    }
+
+    Ok(Json(json!({
+        "window_hours": 24,
+        "tasks_by_status": task_map,
+        "avg_duration_seconds_done": avg_sec,
+        "agents_total": total_agents,
+        "agents_online": online,
+    })))
 }
 
 pub async fn seed_admin(pool: &sqlx::PgPool, username: &str, password: &str) -> anyhow::Result<()> {

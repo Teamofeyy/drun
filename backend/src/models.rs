@@ -33,6 +33,8 @@ pub struct TaskRow {
     pub started_at: Option<DateTime<Utc>>,
     pub completed_at: Option<DateTime<Utc>>,
     pub error_message: Option<String>,
+    pub retries_used: i32,
+    pub max_retries: i32,
 }
 
 #[derive(Debug, Serialize, FromRow)]
@@ -44,6 +46,7 @@ pub struct TaskResultRow {
     pub exit_code: Option<i32>,
     #[sqlx(json)]
     pub data: serde_json::Value,
+    pub summary: Option<String>,
     pub created_at: DateTime<Utc>,
 }
 
@@ -81,12 +84,19 @@ pub struct RegisterAgentResponse {
     pub message: &'static str,
 }
 
+fn default_max_retries() -> i32 {
+    2
+}
+
 #[derive(Debug, Deserialize)]
 pub struct CreateTaskRequest {
     pub agent_id: Uuid,
     pub kind: String,
     #[serde(default)]
     pub payload: serde_json::Value,
+    /// Повторные попытки при ошибке агента (0 = только одна попытка)
+    #[serde(default = "default_max_retries")]
+    pub max_retries: i32,
 }
 
 #[derive(Debug, Deserialize)]
@@ -98,6 +108,8 @@ pub struct CompleteTaskRequest {
     pub data: serde_json::Value,
     #[serde(default)]
     pub logs: Vec<LogLine>,
+    #[serde(default)]
+    pub summary: Option<String>,
 }
 
 #[derive(Debug, Deserialize, Serialize)]

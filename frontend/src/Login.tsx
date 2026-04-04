@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import type { FormEvent } from 'react'
+import { useMutation } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import { api, setToken } from './api'
 
@@ -7,28 +8,24 @@ export function Login() {
   const nav = useNavigate()
   const [user, setUser] = useState('admin')
   const [pass, setPass] = useState('admin')
-  const [err, setErr] = useState<string | null>(null)
-  const [loading, setLoading] = useState(false)
 
-  async function onSubmit(e: FormEvent) {
-    e.preventDefault()
-    setErr(null)
-    setLoading(true)
-    try {
-      const r = await api.login(user, pass)
-      setToken(r.token)
+  const login = useMutation({
+    mutationFn: () => api.login(user, pass),
+    onSuccess: (data) => {
+      setToken(data.token)
       nav('/app')
-    } catch (e) {
-      setErr(e instanceof Error ? e.message : 'login failed')
-    } finally {
-      setLoading(false)
-    }
+    },
+  })
+
+  function onSubmit(e: FormEvent) {
+    e.preventDefault()
+    login.mutate()
   }
 
   return (
     <div className="panel narrow">
       <h1>InfraHub</h1>
-      <p className="muted">Вход в панель (JWT). По умолчанию admin / admin.</p>
+      <p className="muted">Вход в панель. По умолчанию admin / admin.</p>
       <form onSubmit={onSubmit} className="stack">
         <label>
           Логин
@@ -47,9 +44,15 @@ export function Login() {
             autoComplete="current-password"
           />
         </label>
-        {err && <p className="error">{err}</p>}
-        <button type="submit" disabled={loading}>
-          {loading ? '…' : 'Войти'}
+        {login.isError && (
+          <p className="error">
+            {login.error instanceof Error
+              ? login.error.message
+              : 'Не удалось войти'}
+          </p>
+        )}
+        <button type="submit" disabled={login.isPending}>
+          {login.isPending ? '…' : 'Войти'}
         </button>
       </form>
     </div>

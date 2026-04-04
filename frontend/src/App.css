@@ -154,3 +154,198 @@ td {
 .logs li {
   margin-bottom: 0.35rem;
 }
+
+.tagline {
+  margin: 0.15rem 0 0;
+  font-size: 0.8rem;
+}
+
+.small {
+  font-size: 0.82rem;
+}
+
+.kind {
+  font-size: 0.85rem;
+  background: #1a1f28;
+  padding: 0.15rem 0.4rem;
+  border-radius: 6px;
+}
+
+.summary-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 1rem;
+}
+
+.cards {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+
+.card {
+  background: #1a1f28;
+  border: 1px solid #2c3340;
+  border-radius: 10px;
+  padding: 0.85rem 1rem;
+  min-width: 160px;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.card.wide {
+  flex: 1 1 100%;
+  min-width: 100%;
+}
+
+.card-label {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #8b95a8;
+}
+
+.compact {
+  font-size: 0.85rem;
+  margin-top: 0.5rem;
+}
+
+.compact th,
+.compact td {
+  padding: 0.35rem 0.5rem;
+}
+
+.callout {
+  padding: 1rem;
+  border-radius: 10px;
+  border: 1px solid #3a3540;
+  background: #1c1820;
+}
+
+.callout.error {
+  border-color: #5a2a32;
+  background: #251418;
+}
+
+.result-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.subpanel h3 {
+  margin: 0 0 0.5rem;
+  font-size: 0.95rem;
+}
+
+pre.out {
+  background: #12151c;
+  padding: 0.75rem;
+  border-radius: 8px;
+  margin: 0 0 0.5rem;
+}
+
+pre.err {
+  background: #251418;
+  color: #ffb4b4;
+  padding: 0.75rem;
+  border-radius: 8px;
+  margin: 0;
+}
+
+pre.flat {
+  margin: 0;
+  white-space: pre-wrap;
+  background: transparent;
+  padding: 0;
+}
+
+.raw-details {
+  margin-top: 0.5rem;
+}
+
+.raw-details summary {
+  cursor: pointer;
+  color: #8b9cc4;
+  margin-bottom: 0.5rem;
+}
+
+.live {
+  color: #6dffb0;
+  font-size: 0.85rem;
+  margin-left: 0.5rem;
+  font-weight: normal;
+  text-transform: none;
+  letter-spacing: normal;
+}
+
+.pill.large {
+  font-size: 0.9rem;
+  padding: 0.35rem 0.75rem;
+}
+
+.pill.status-pending,
+.pill.status-running {
+  background: #2a2518;
+  color: #ffd47a;
+}
+
+.pill.status-done {
+  background: #14321f;
+  color: #7dffb1;
+}
+
+.pill.status-failed {
+  background: #321418;
+  color: #ff9b9b;
+}
+
+details.panel summary {
+  cursor: pointer;
+  font-weight: 600;
+  margin-bottom: 0.75rem;
+}
+
+.summary-callout {
+  border-color: #2a3d5a;
+  background: #151a24;
+}
+
+.metrics-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 1rem;
+}
+
+.metric strong {
+  font-size: 1.25rem;
+  display: block;
+  margin-top: 0.25rem;
+}
+
+.template-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.btn-secondary {
+  background: #252b38;
+  border-color: #3a4558;
+  font-weight: 500;
+}
+
+.btn-secondary:hover:not(:disabled) {
+  background: #2c3445;
+}
+
+.bundle-section .subpanel {
+  margin-top: 0.75rem;
+  padding: 0.5rem 0;
+}
+
+.small-json {
+  max-height: 280px;
+  font-size: 0.75rem;
+}

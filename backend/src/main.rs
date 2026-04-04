@@ -5,6 +5,7 @@ mod handlers;
 mod models;
 mod queue;
 mod state;
+mod streaming;
 mod token;
 
 use std::sync::Arc;
@@ -58,6 +59,11 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/v1/tasks/{id}", get(handlers::get_task))
         .route("/api/v1/tasks/{id}/result", get(handlers::get_task_result))
         .route("/api/v1/tasks/{id}/logs", get(handlers::get_task_logs))
+        .route(
+            "/api/v1/stream/dashboard",
+            get(streaming::sse_dashboard),
+        )
+        .route("/api/v1/metrics/summary", get(handlers::metrics_summary))
         .layer(CorsLayer::permissive())
         .layer(TraceLayer::new_for_http())
         .with_state(state);

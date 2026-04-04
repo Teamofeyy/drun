@@ -8,6 +8,8 @@ pub struct Config {
     pub admin_username: String,
     pub admin_password: String,
     pub bind: String,
+    /// Сколько задач одновременно может быть в статусе running на одном агенте
+    pub agent_max_concurrent_tasks: i64,
 }
 
 impl Config {
@@ -24,6 +26,11 @@ impl Config {
             admin_username: env::var("ADMIN_USERNAME").unwrap_or_else(|_| "admin".into()),
             admin_password: env::var("ADMIN_PASSWORD").unwrap_or_else(|_| "admin".into()),
             bind: env::var("BIND").unwrap_or_else(|_| "0.0.0.0:8080".into()),
+            agent_max_concurrent_tasks: env::var("AGENT_MAX_CONCURRENT_TASKS")
+                .ok()
+                .and_then(|s| s.parse().ok())
+                .unwrap_or(1)
+                .max(1),
         })
     }
 }
