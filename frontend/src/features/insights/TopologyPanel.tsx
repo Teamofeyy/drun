@@ -5,13 +5,17 @@ import {
   Background,
   BezierEdge,
   Controls,
+  Handle,
   MiniMap,
+  Position,
   ReactFlow,
   ReactFlowProvider,
   useEdgesState,
   useNodesState,
   useReactFlow,
   type EdgeProps,
+  type Node,
+  type NodeProps,
 } from '@xyflow/react'
 import type { CSSProperties } from 'react'
 import { useEffect, useMemo, useState } from 'react'
@@ -45,6 +49,32 @@ const nodeColor: Record<string, string> = {
   probe_target: 'hsl(45 85% 48%)',
 }
 
+type TopologyFlowNode = Node<{ label: string }>
+
+/**
+ * Нужны Handle с классами source/target: иначе @xyflow не считает handleBounds и рёбра не рисуются.
+ * Визуально скрываем в topologyFlow.css (.topology-invisible-handle).
+ */
+function TopologyPlainNode({ data }: NodeProps<TopologyFlowNode>) {
+  return (
+    <>
+      <Handle
+        type="target"
+        position={Position.Top}
+        isConnectable={false}
+        className="topology-invisible-handle"
+      />
+      {data.label}
+      <Handle
+        type="source"
+        position={Position.Bottom}
+        isConnectable={false}
+        className="topology-invisible-handle"
+      />
+    </>
+  )
+}
+
 function TopologyBezierEdge(props: EdgeProps) {
   const detail =
     props.data && typeof (props.data as { detail?: unknown }).detail === 'string'
@@ -57,6 +87,9 @@ function TopologyBezierEdge(props: EdgeProps) {
     </g>
   )
 }
+
+const topologyNodeTypes = { default: TopologyPlainNode }
+const topologyEdgeTypes = { default: TopologyBezierEdge }
 
 function edgeVisuals(e: TopologyEdge): {
   style: CSSProperties
@@ -398,7 +431,14 @@ function TopologyFlowView({
   const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges)
 
   useEffect(() => {
-    setNodes(initialNodes)
+    setNodes((prev) => {
+      if (prev.length === 0) return initialNodes
+      const posById = new Map(prev.map((n) => [n.id, n.position]))
+      return initialNodes.map((n) => ({
+        ...n,
+        position: posById.get(n.id) ?? n.position,
+      }))
+    })
     setEdges(initialEdges)
   }, [initialNodes, initialEdges, setNodes, setEdges])
 
@@ -409,13 +449,13 @@ function TopologyFlowView({
         edges={edges}
         onNodesChange={onNodesChange}
         onEdgesChange={onEdgesChange}
-        edgeTypes={{ default: TopologyBezierEdge }}
+        nodeTypes={topologyNodeTypes}
+        edgeTypes={topologyEdgeTypes}
         fitView
         fitViewOptions={{ padding: 0.2 }}
         minZoom={0.12}
         maxZoom={1.75}
         onlyRenderVisibleElements
-        nodesDraggable={false}
         nodesConnectable={false}
         edgesReconnectable={false}
         proOptions={{ hideAttribution: true }}

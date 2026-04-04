@@ -6,8 +6,10 @@ Wants=network-online.target
 [Service]
 Type=simple
 EnvironmentFile=/etc/default/infrahub-agent
+# URL master только из API (extra-var infrahub_api_base); argv переопределяет env и дефолт clap.
+Environment="INFRAHUB_AGENT_NAME={{ infrahub_agent_name | trim }}"
 WorkingDirectory={{ infrahub_agent_state_dir }}
-ExecStart={{ infrahub_agent_install_path }}
+ExecStart={{ infrahub_agent_install_path }} --server={{ infrahub_api_base | trim }}
 Restart=on-failure
 RestartSec=5
 

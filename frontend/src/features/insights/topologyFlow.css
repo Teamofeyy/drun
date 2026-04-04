@@ -2,6 +2,19 @@
  * React Flow: панель управления и подписи рёбер должны использовать те же
  * CSS-переменные, что и тема (oklch). Не использовать hsl(var(--token)).
  */
+
+/* Ручки нужны для геометрии рёбер; стандартные точки не показываем. */
+.topology-flow-shell .topology-invisible-handle {
+  opacity: 0 !important;
+  width: 1px !important;
+  height: 1px !important;
+  min-width: 1px !important;
+  min-height: 1px !important;
+  border: 0 !important;
+  background: transparent !important;
+  pointer-events: none;
+}
+
 .topology-flow-shell .react-flow__controls {
   background: var(--card) !important;
   border: 1px solid var(--border) !important;

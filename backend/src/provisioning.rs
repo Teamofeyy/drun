@@ -28,7 +28,7 @@ pub struct ProvisionAgentRequest {
     #[serde(default = "default_ssh_port")]
     pub ssh_port: u16,
     pub agent_name: String,
-    /// Базовый URL API InfraHub, как его видит удалённый хост (например https://hub.example:8080)
+    /// URL master API для агента; передаётся в systemd как есть (без подстановок на стороне backend).
     pub infrahub_api_base: String,
     #[serde(default)]
     pub private_key_pem: Option<String>,
@@ -72,7 +72,7 @@ struct HostConn {
 
 #[derive(Debug, Serialize)]
 struct ExtraVars {
-    infrahub_server: String,
+    infrahub_api_base: String,
     infrahub_agent_name: String,
     /// Абсолютный путь к бинарю на машине, где запущен ansible-playbook
     infrahub_agent_local_binary: String,
@@ -278,11 +278,7 @@ fn validate_ssh_user(u: &str) -> bool {
 }
 
 fn validate_infrahub_base(s: &str) -> bool {
-    if s.len() < 8 || s.len() > 2048 {
-        return false;
-    }
-    let lower = s.to_ascii_lowercase();
-    lower.starts_with("http://") || lower.starts_with("https://")
+    !s.is_empty() && s.len() <= 2048 && !s.chars().any(|c| c.is_control())
 }
 
 /// Бинарь `infrahub-agent` из workspace (`target/debug|release`) или `INFRAHUB_AGENT_BINARY`.
@@ -418,7 +414,7 @@ async fn run_ansible_playbook(
         .ok_or_else(|| "agent binary path is not valid UTF-8".to_string())?
         .to_string();
     let extra = ExtraVars {
-        infrahub_server: req.infrahub_api_base.clone(),
+        infrahub_api_base: req.infrahub_api_base.clone(),
         infrahub_agent_name: req.agent_name.clone(),
         infrahub_agent_local_binary: bin_str,
         infrahub_agent_install_path: "/usr/local/bin/infrahub-agent".into(),

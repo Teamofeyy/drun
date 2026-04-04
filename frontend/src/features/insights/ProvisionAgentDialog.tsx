@@ -1,7 +1,11 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { useEffect, useId, useState } from 'react'
 import { toast } from 'sonner'
-import { api, type ProvisionAgentResponse } from '@/api'
+import {
+  provisionAgent,
+  type ProvisionAgentRequest,
+  type ProvisionAgentResponse,
+} from '@/api'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -38,7 +42,11 @@ export function ProvisionAgentDialog({ open, onOpenChange }: Props) {
 
   useEffect(() => {
     if (open && typeof window !== 'undefined' && !apiBase) {
-      setApiBase(window.location.origin)
+      const h = window.location.hostname
+      // localhost в браузере ≠ адрес InfraHub для удалённого агента; API обычно :8080, не Vite :5173
+      if (h !== 'localhost' && h !== '127.0.0.1') {
+        setApiBase(`${window.location.protocol}//${h}:8080`)
+      }
     }
   }, [open, apiBase])
 
@@ -58,7 +66,25 @@ export function ProvisionAgentDialog({ open, onOpenChange }: Props) {
           new Error('Заполните хост, SSH-пользователя, имя агента и URL API'),
         )
       }
-      const body: Parameters<typeof api.provisionAgent>[0] = {
+      const targetHost = host.trim().toLowerCase()
+      const targetIsRemote =
+        targetHost !== 'localhost' &&
+        targetHost !== '127.0.0.1' &&
+        targetHost !== '::1'
+      const api = apiBase.trim()
+      if (
+        targetIsRemote &&
+        (/localhost/i.test(api) ||
+          /127\.0\.0\.1/.test(api) ||
+          /\[::1\]/.test(api))
+      ) {
+        return Promise.reject(
+          new Error(
+            'URL API указывает на localhost, а SSH-хост — удалённый сервер: с него до InfraHub так не подключиться. Укажите адрес API, доступный с целевой машины (публичный IP или DNS и порт, обычно :8080), и откройте порт на файрволе.',
+          ),
+        )
+      }
+      const body: ProvisionAgentRequest = {
         host: host.trim(),
         ssh_user: sshUser.trim(),
         ssh_port: port,
@@ -72,7 +98,7 @@ export function ProvisionAgentDialog({ open, onOpenChange }: Props) {
         body.ssh_password = sshPassword || null
         body.private_key_pem = null
       }
-      return api.provisionAgent(body)
+      return provisionAgent(body)
     },
     onSuccess: (data) => {
       setLastResult(data)
@@ -162,8 +188,12 @@ export function ProvisionAgentDialog({ open, onOpenChange }: Props) {
               autoComplete="off"
             />
             <p className="text-xs text-muted-foreground">
-              Как удалённый хост достучится до InfraHub (часто тот же origin,
-              что у браузера).
+              Адрес HTTP API InfraHub так, как его должен открыть{' '}
+              <strong>целевой сервер</strong> (не localhost с его стороны). Пример:{' '}
+              <code className="rounded bg-muted px-1 py-0.5 text-[0.65rem]">
+                http://&lt;ваш-сервер&gt;:8080
+              </code>
+              . Если UI открыт с localhost — поле нужно заполнить вручную.
             </p>
           </div>
           <fieldset className="space-y-3 rounded-md border border-border p-3">
