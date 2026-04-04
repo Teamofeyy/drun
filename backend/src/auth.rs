@@ -1,3 +1,4 @@
+use axum::http::StatusCode;
 use argon2::{
     password_hash::{PasswordHash, PasswordHasher, PasswordVerifier, SaltString},
     Argon2,
@@ -11,6 +12,8 @@ use crate::error::ApiError;
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Claims {
     pub sub: String,
+    #[serde(default)]
+    pub role: Option<String>,
     pub exp: usize,
 }
 
@@ -37,10 +40,16 @@ pub fn verify_agent_token(token: &str, hash: &str) -> bool {
     verify_password(token, hash)
 }
 
-pub fn issue_jwt(user_id: &Uuid, secret: &str, ttl_hours: u64) -> Result<String, jsonwebtoken::errors::Error> {
+pub fn issue_jwt(
+    user_id: &Uuid,
+    role: &str,
+    secret: &str,
+    ttl_hours: u64,
+) -> Result<String, jsonwebtoken::errors::Error> {
     let exp = chrono::Utc::now().timestamp() as usize + (ttl_hours as usize * 3600);
     let claims = Claims {
         sub: user_id.to_string(),
+        role: Some(role.to_string()),
         exp,
     };
     encode(
@@ -57,5 +66,5 @@ pub fn parse_jwt(token: &str, secret: &str) -> Result<Claims, ApiError> {
         &Validation::default(),
     )
     .map(|d| d.claims)
-    .map_err(|_| ApiError::new(axum::http::StatusCode::UNAUTHORIZED, "invalid token"))
+    .map_err(|_| ApiError::new(StatusCode::UNAUTHORIZED, "invalid token"))
 }

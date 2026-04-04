@@ -25,3 +25,15 @@ pub async fn dequeue(
         .await?;
     Ok(v.and_then(|s| Uuid::parse_str(&s).ok()))
 }
+
+/// Удаляет все ключи очередей `infrahub:q:*` (после очистки истории задач в БД).
+pub async fn clear_all_agent_queues(
+    redis: &mut redis::aio::ConnectionManager,
+) -> Result<u64, redis::RedisError> {
+    use redis::AsyncCommands;
+    let keys: Vec<String> = redis.keys("infrahub:q:*").await?;
+    for k in &keys {
+        let _: () = redis.del(k).await?;
+    }
+    Ok(keys.len() as u64)
+}

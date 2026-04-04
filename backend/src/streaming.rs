@@ -7,12 +7,16 @@ use axum::{
     response::sse::{Event, KeepAlive, Sse},
 };
 use serde::Deserialize;
-use chrono::{DateTime, Utc};
+use chrono::Utc;
 use serde_json::json;
-use sqlx::PgPool;
-use uuid::Uuid;
+use sea_orm::{EntityTrait, QueryOrder, QuerySelect};
 
-use crate::{auth::parse_jwt, error::ApiError, state::AppState};
+use crate::{
+    auth::parse_jwt,
+    entity::{agents, tasks},
+    error::ApiError,
+    state::AppState,
+};
 
 #[derive(Deserialize)]
 pub struct SseTokenQuery {
@@ -24,12 +28,12 @@ pub async fn sse_dashboard(
     State(state): State<AppState>,
 ) -> Result<Sse<impl futures::Stream<Item = Result<Event, Infallible>>>, ApiError> {
     let _claims = parse_jwt(&q.token, &state.config.jwt_secret)?;
-    let pool = state.pool.clone();
+    let db = state.db.clone();
 
     let s = stream! {
         loop {
             tokio::time::sleep(Duration::from_secs(2)).await;
-            let payload = snapshot_payload(&pool).await;
+            let payload = snapshot_payload(&db).await;
             let data = serde_json::to_string(&payload).unwrap_or_else(|_| "{}".into());
             yield Ok(Event::default().data(data));
         }
@@ -42,38 +46,31 @@ pub async fn sse_dashboard(
     ))
 }
 
-async fn snapshot_payload(pool: &PgPool) -> serde_json::Value {
-    let _ = sqlx::query(
-        "UPDATE agents SET status = 'offline' WHERE status = 'online' \
-         AND (last_seen_at IS NULL OR last_seen_at < now() - interval '90 seconds')",
-    )
-    .execute(pool)
-    .await;
+async fn snapshot_payload(db: &sea_orm::DatabaseConnection) -> serde_json::Value {
+    crate::handlers::mark_stale_agents_db(db).await;
 
-    type AgentRow = (Uuid, String, String, Option<DateTime<Utc>>);
-    let agents: Vec<AgentRow> = match sqlx::query_as(
-        "SELECT id, name, status, last_seen_at FROM agents ORDER BY created_at DESC LIMIT 100",
-    )
-    .fetch_all(pool)
-    .await
+    let agents = match agents::Entity::find()
+        .order_by_desc(agents::Column::CreatedAt)
+        .limit(100)
+        .all(db)
+        .await
     {
         Ok(v) => v,
         Err(_) => return json!({ "error": "db", "ts": Utc::now() }),
     };
 
-    type TaskRow = (Uuid, String, String, Uuid, DateTime<Utc>);
-    let tasks: Vec<TaskRow> = match sqlx::query_as(
-        "SELECT id, kind, status, agent_id, created_at FROM tasks ORDER BY created_at DESC LIMIT 80",
-    )
-    .fetch_all(pool)
-    .await
+    let tasks = match tasks::Entity::find()
+        .order_by_desc(tasks::Column::CreatedAt)
+        .limit(80)
+        .all(db)
+        .await
     {
         Ok(v) => v,
         Err(_) => {
             return json!({
                 "ts": Utc::now(),
-                "agents": agents.iter().map(|(id, n, s, l)| json!({
-                    "id": id, "name": n, "status": s, "last_seen_at": l
+                "agents": agents.iter().map(|a| json!({
+                    "id": a.id, "name": a.name, "status": a.status, "last_seen_at": a.last_seen_at
                 })).collect::<Vec<_>>(),
                 "tasks": [],
             })
@@ -82,11 +79,11 @@ async fn snapshot_payload(pool: &PgPool) -> serde_json::Value {
 
     json!({
         "ts": Utc::now(),
-        "agents": agents.iter().map(|(id, n, s, l)| json!({
-            "id": id, "name": n, "status": s, "last_seen_at": l
+        "agents": agents.iter().map(|a| json!({
+            "id": a.id, "name": a.name, "status": a.status, "last_seen_at": a.last_seen_at
         })).collect::<Vec<_>>(),
-        "tasks": tasks.iter().map(|(id, k, st, aid, c)| json!({
-            "id": id, "kind": k, "status": st, "agent_id": aid, "created_at": c
+        "tasks": tasks.iter().map(|t| json!({
+            "id": t.id, "kind": t.kind, "status": t.status, "agent_id": t.agent_id, "created_at": t.created_at
         })).collect::<Vec<_>>(),
     })
 }

@@ -1,17 +1,25 @@
+mod admin_api;
+mod analytics;
 mod auth;
 mod config;
+mod entity;
 mod error;
+mod export;
 mod handlers;
+mod machine_diff;
 mod models;
 mod queue;
+mod roles;
+mod session;
 mod state;
 mod streaming;
 mod token;
+mod topology;
 
 use std::sync::Arc;
 
 use axum::{
-    routing::{get, post},
+    routing::{get, patch, post},
     Router,
 };
 use tower_http::{cors::CorsLayer, trace::TraceLayer};
@@ -28,14 +36,15 @@ async fn main() -> anyhow::Result<()> {
 
     let pool = sqlx::PgPool::connect(&cfg.database_url).await?;
     sqlx::migrate!().run(&pool).await?;
+    let db: sea_orm::DatabaseConnection = pool.into();
 
-    handlers::seed_admin(&pool, &cfg.admin_username, &cfg.admin_password).await?;
+    handlers::seed_admin(&db, &cfg.admin_username, &cfg.admin_password).await?;
 
     let client = redis::Client::open(cfg.redis_url.as_str())?;
     let redis = redis::aio::ConnectionManager::new(client).await?;
 
     let state = state::AppState {
-        pool,
+        db,
         redis,
         config: cfg,
     };
@@ -43,6 +52,7 @@ async fn main() -> anyhow::Result<()> {
     let app = Router::new()
         .route("/health", get(handlers::health))
         .route("/api/v1/auth/login", post(handlers::login))
+        .route("/api/v1/me", get(handlers::current_user))
         .route("/api/v1/agent/register", post(handlers::register_agent))
         .route("/api/v1/agent/heartbeat", post(handlers::agent_heartbeat))
         .route("/api/v1/agent/tasks/next", get(handlers::agent_next_task))
@@ -52,6 +62,14 @@ async fn main() -> anyhow::Result<()> {
         )
         .route("/api/v1/agent/tasks/{id}/fail", post(handlers::agent_fail_task))
         .route("/api/v1/agents", get(handlers::list_agents))
+        .route(
+            "/api/v1/agents/{id}/machine-diff",
+            get(machine_diff::machine_diff_between_tasks),
+        )
+        .route(
+            "/api/v1/agents/{id}",
+            patch(handlers::patch_agent),
+        )
         .route(
             "/api/v1/tasks",
             get(handlers::list_tasks).post(handlers::create_task),
@@ -64,6 +82,24 @@ async fn main() -> anyhow::Result<()> {
             get(streaming::sse_dashboard),
         )
         .route("/api/v1/metrics/summary", get(handlers::metrics_summary))
+        .route(
+            "/api/v1/analytics/daily",
+            get(analytics::daily_metrics),
+        )
+        .route(
+            "/api/v1/analytics/ranking",
+            get(analytics::agent_ranking),
+        )
+        .route(
+            "/api/v1/analytics/groups",
+            get(analytics::agent_groups),
+        )
+        .route("/api/v1/topology/graph", get(topology::topology_graph))
+        .route("/api/v1/export/tasks", get(export::export_tasks))
+        .route(
+            "/api/v1/admin/clear-task-history",
+            post(admin_api::wipe_task_history),
+        )
         .layer(CorsLayer::permissive())
         .layer(TraceLayer::new_for_http())
         .with_state(state);
