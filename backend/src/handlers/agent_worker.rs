@@ -34,9 +34,8 @@ pub async fn register_agent(
 
     let raw_token: String = format!("{}.{}", Uuid::new_v4(), Uuid::new_v4().simple());
     let fp = fingerprint_token(&raw_token);
-    let th = hash_agent_token(&raw_token).map_err(|_| {
-        ApiError::new(StatusCode::INTERNAL_SERVER_ERROR, "hash failed")
-    })?;
+    let th = hash_agent_token(&raw_token)
+        .map_err(|_| ApiError::new(StatusCode::INTERNAL_SERVER_ERROR, "hash failed"))?;
 
     let id = Uuid::new_v4();
     agents::ActiveModel {
@@ -65,9 +64,8 @@ pub async fn agent_heartbeat(
     State(state): State<AppState>,
     headers: HeaderMap,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    let token = bearer(&headers).ok_or_else(|| {
-        ApiError::new(StatusCode::UNAUTHORIZED, "missing bearer token")
-    })?;
+    let token = bearer(&headers)
+        .ok_or_else(|| ApiError::new(StatusCode::UNAUTHORIZED, "missing bearer token"))?;
     let agent_id = resolve_agent(&state, &token).await?;
 
     let agent = agents::Entity::find_by_id(agent_id)
@@ -90,9 +88,8 @@ pub async fn agent_next_task(
     State(state): State<AppState>,
     headers: HeaderMap,
 ) -> Result<Json<Option<TaskRow>>, ApiError> {
-    let token = bearer(&headers).ok_or_else(|| {
-        ApiError::new(StatusCode::UNAUTHORIZED, "missing bearer token")
-    })?;
+    let token = bearer(&headers)
+        .ok_or_else(|| ApiError::new(StatusCode::UNAUTHORIZED, "missing bearer token"))?;
     let agent_id = resolve_agent(&state, &token).await?;
 
     let running = tasks::Entity::find()
@@ -107,12 +104,10 @@ pub async fn agent_next_task(
     }
 
     let mut redis = state.redis.clone();
-    let mut task_id = queue::dequeue(&mut redis, agent_id)
-        .await
-        .map_err(|e| {
-            tracing::error!(%e, "redis dequeue");
-            ApiError::new(StatusCode::INTERNAL_SERVER_ERROR, "queue error")
-        })?;
+    let mut task_id = queue::dequeue(&mut redis, agent_id).await.map_err(|e| {
+        tracing::error!(%e, "redis dequeue");
+        ApiError::new(StatusCode::INTERNAL_SERVER_ERROR, "queue error")
+    })?;
 
     if task_id.is_none() {
         let row = tasks::Entity::find()
@@ -159,9 +154,8 @@ pub async fn agent_complete_task(
     headers: HeaderMap,
     Json(body): Json<CompleteTaskRequest>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    let token = bearer(&headers).ok_or_else(|| {
-        ApiError::new(StatusCode::UNAUTHORIZED, "missing bearer token")
-    })?;
+    let token = bearer(&headers)
+        .ok_or_else(|| ApiError::new(StatusCode::UNAUTHORIZED, "missing bearer token"))?;
     let agent_id = resolve_agent(&state, &token).await?;
 
     let owner = tasks::Entity::find_by_id(id)
@@ -236,9 +230,8 @@ pub async fn agent_fail_task(
     headers: HeaderMap,
     Json(body): Json<serde_json::Value>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    let token = bearer(&headers).ok_or_else(|| {
-        ApiError::new(StatusCode::UNAUTHORIZED, "missing bearer token")
-    })?;
+    let token = bearer(&headers)
+        .ok_or_else(|| ApiError::new(StatusCode::UNAUTHORIZED, "missing bearer token"))?;
     let agent_id = resolve_agent(&state, &token).await?;
 
     let msg = body

@@ -75,7 +75,9 @@ async fn main() -> anyhow::Result<()> {
     } else {
         eprintln!(
             "Подключение как «{}» (id: {}), {}",
-            state.name, state.agent_id, path.display()
+            state.name,
+            state.agent_id,
+            path.display()
         );
     }
 

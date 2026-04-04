@@ -46,23 +46,44 @@ fn autosummary(kind: &str, data: &Value) -> String {
         "system_info" => data
             .get("hostname")
             .and_then(|v| v.as_str())
-            .map(|h| format!("Узел {h}, {}", data.get("os_long").and_then(|v| v.as_str()).unwrap_or("")))
+            .map(|h| {
+                format!(
+                    "Узел {h}, {}",
+                    data.get("os_long").and_then(|v| v.as_str()).unwrap_or("")
+                )
+            })
             .unwrap_or_else(|| "Сводка по системе".into()),
         "port_check" => {
-            let n = data.get("results").and_then(|r| r.as_array()).map(|a| a.len()).unwrap_or(0);
+            let n = data
+                .get("results")
+                .and_then(|r| r.as_array())
+                .map(|a| a.len())
+                .unwrap_or(0);
             let open = data
                 .get("results")
                 .and_then(|r| r.as_array())
-                .map(|a| a.iter().filter(|x| x.get("open").and_then(|v| v.as_bool()) == Some(true)).count())
+                .map(|a| {
+                    a.iter()
+                        .filter(|x| x.get("open").and_then(|v| v.as_bool()) == Some(true))
+                        .count()
+                })
                 .unwrap_or(0);
             format!("Проверено портов: {n}, доступно TCP: {open}")
         }
         "network_reachability" => {
-            let n = data.get("results").and_then(|r| r.as_array()).map(|a| a.len()).unwrap_or(0);
+            let n = data
+                .get("results")
+                .and_then(|r| r.as_array())
+                .map(|a| a.len())
+                .unwrap_or(0);
             let ok = data
                 .get("results")
                 .and_then(|r| r.as_array())
-                .map(|a| a.iter().filter(|x| x.get("reachable").and_then(|v| v.as_bool()) == Some(true)).count())
+                .map(|a| {
+                    a.iter()
+                        .filter(|x| x.get("reachable").and_then(|v| v.as_bool()) == Some(true))
+                        .count()
+                })
                 .unwrap_or(0);
             format!("Целей: {n}, доступно: {ok}")
         }
@@ -196,9 +217,10 @@ fn system_info() -> Result<CheckOutput, CheckError> {
         stdout: Some(hn.clone()),
         stderr: None,
         exit_code: 0,
-        logs: vec![
-            ("info".into(), "system_info: hostname, IPs, interfaces, OS, CPU, RAM, disks".into()),
-        ],
+        logs: vec![(
+            "info".into(),
+            "system_info: hostname, IPs, interfaces, OS, CPU, RAM, disks".into(),
+        )],
         summary,
     })
 }
@@ -263,7 +285,10 @@ async fn port_check(payload: &Value) -> Result<CheckOutput, CheckError> {
         }));
     }
 
-    let open_n = results.iter().filter(|r| r.get("open").and_then(|v| v.as_bool()) == Some(true)).count();
+    let open_n = results
+        .iter()
+        .filter(|r| r.get("open").and_then(|v| v.as_bool()) == Some(true))
+        .count();
 
     Ok(CheckOutput {
         data: json!({ "results": results, "timeout_secs": timeout_secs }),
@@ -423,7 +448,9 @@ async fn network_reachability(payload: &Value) -> Result<CheckOutput, CheckError
 
     let mut out = Vec::new();
     for t in targets {
-        let s = t.as_str().ok_or_else(|| CheckError::BadPayload("target string".into()))?;
+        let s = t
+            .as_str()
+            .ok_or_else(|| CheckError::BadPayload("target string".into()))?;
         let started = Instant::now();
 
         let host_part = s.rsplit_once(':').map(|(h, _)| h).unwrap_or(s);
@@ -459,7 +486,10 @@ async fn network_reachability(payload: &Value) -> Result<CheckOutput, CheckError
         }));
     }
 
-    let ok = out.iter().filter(|r| r.get("reachable").and_then(|v| v.as_bool()) == Some(true)).count();
+    let ok = out
+        .iter()
+        .filter(|r| r.get("reachable").and_then(|v| v.as_bool()) == Some(true))
+        .count();
 
     Ok(CheckOutput {
         data: json!({ "results": out, "timeout_secs": timeout_secs }),
@@ -494,7 +524,10 @@ async fn check_bundle(payload: &Value) -> Result<CheckOutput, CheckError> {
             let summary = format!(
                 "Базовая диагностика: {} · RAM {} MiB свободно не считаем здесь",
                 sys.summary,
-                mem.data.get("ram_used_mb").and_then(|v| v.as_u64()).unwrap_or(0)
+                mem.data
+                    .get("ram_used_mb")
+                    .and_then(|v| v.as_u64())
+                    .unwrap_or(0)
             );
             let mut logs = sys.logs;
             logs.extend(mem.logs);
