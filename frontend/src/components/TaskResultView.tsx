@@ -1,4 +1,5 @@
-import type { TaskResult } from '../api'
+import type { TaskResult } from '@/api'
+import { cn } from '@/lib/utils'
 
 type Props = {
   kind: string
@@ -13,16 +14,16 @@ function isRecord(v: unknown): v is Record<string, unknown> {
 export function TaskResultView({ kind, result, taskError }: Props) {
   if (taskError) {
     return (
-      <div className="callout error">
-        <strong>Ошибка выполнения</strong>
-        <p>{taskError}</p>
+      <div className="rounded-lg border border-destructive/40 bg-destructive/10 p-4">
+        <strong className="text-destructive">Ошибка выполнения</strong>
+        <p className="mt-2 text-sm">{taskError}</p>
       </div>
     )
   }
 
   if (!result) {
     return (
-      <p className="muted">
+      <p className="text-sm text-muted-foreground">
         Подробный результат появится после завершения задачи.
       </p>
     )
@@ -31,16 +32,16 @@ export function TaskResultView({ kind, result, taskError }: Props) {
   const data = result.data
 
   return (
-    <div className="result-stack">
+    <div className="flex flex-col gap-4">
       {result.summary && (
-        <div className="callout summary-callout">
-          <strong>Краткая сводка</strong>
-          <p>{result.summary}</p>
+        <div className="rounded-lg border border-primary/25 bg-muted/40 p-4">
+          <strong className="text-foreground">Краткая сводка</strong>
+          <p className="mt-2 text-sm text-muted-foreground">{result.summary}</p>
         </div>
       )}
 
       {result.exit_code != null && (
-        <p className="muted">
+        <p className="text-sm text-muted-foreground">
           Код выхода: <strong>{result.exit_code}</strong>
         </p>
       )}
@@ -62,29 +63,43 @@ export function TaskResultView({ kind, result, taskError }: Props) {
       )}
 
       {(result.stdout || result.stderr) && (
-        <section className="subpanel">
-          <h3>Вывод</h3>
+        <section className="space-y-2">
+          <h3 className="text-sm font-semibold">Вывод</h3>
           {result.stdout && (
-            <pre className="mono out">{result.stdout}</pre>
+            <pre className="max-h-64 overflow-auto rounded-lg bg-muted/50 p-3 font-mono text-xs">
+              {result.stdout}
+            </pre>
           )}
           {result.stderr && (
-            <pre className="mono err">{result.stderr}</pre>
+            <pre className="max-h-64 overflow-auto rounded-lg border border-destructive/30 bg-destructive/10 p-3 font-mono text-xs text-destructive">
+              {result.stderr}
+            </pre>
           )}
         </section>
       )}
 
-      <details className="raw-details">
-        <summary>Полные данные (JSON)</summary>
-        <pre className="mono block">{JSON.stringify(result, null, 2)}</pre>
+      <details className="rounded-lg border border-border bg-muted/20 p-4">
+        <summary className="cursor-pointer text-sm font-medium text-muted-foreground">
+          Полные данные (JSON)
+        </summary>
+        <pre className="mt-3 max-h-[420px] overflow-auto font-mono text-xs">
+          {JSON.stringify(result, null, 2)}
+        </pre>
       </details>
     </div>
   )
 }
 
+function cardClass(wide?: boolean) {
+  return cn(
+    'flex min-w-[160px] flex-col gap-1 rounded-lg border border-border bg-card p-4',
+    wide && 'min-w-full basis-full',
+  )
+}
+
 function SystemInfoView({ data }: { data: Record<string, unknown> }) {
   const hostname = String(data.hostname ?? '—')
-  const os =
-    String(data.os_long ?? data.os ?? '—')
+  const os = String(data.os_long ?? data.os ?? '—')
   const kernel = data.kernel != null ? String(data.kernel) : '—'
   const arch = data.cpu_arch != null ? String(data.cpu_arch) : '—'
   const ips = Array.isArray(data.all_ip_addresses)
@@ -97,26 +112,36 @@ function SystemInfoView({ data }: { data: Record<string, unknown> }) {
   const mounts = Array.isArray(data.disk_mounts) ? data.disk_mounts : []
 
   return (
-    <section className="cards">
-      <div className="card">
-        <span className="card-label">Hostname</span>
+    <div className="flex flex-wrap gap-3">
+      <div className={cardClass()}>
+        <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+          Hostname
+        </span>
         <strong>{hostname}</strong>
       </div>
-      <div className="card wide">
-        <span className="card-label">ОС (версия)</span>
+      <div className={cardClass(true)}>
+        <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+          ОС (версия)
+        </span>
         <strong>{os}</strong>
       </div>
-      <div className="card">
-        <span className="card-label">Ядро</span>
+      <div className={cardClass()}>
+        <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+          Ядро
+        </span>
         <strong>{kernel}</strong>
       </div>
-      <div className="card">
-        <span className="card-label">Архитектура</span>
+      <div className={cardClass()}>
+        <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+          Архитектура
+        </span>
         <strong>{arch}</strong>
       </div>
       {typeof ramT === 'number' && typeof ramU === 'number' && (
-        <div className="card wide">
-          <span className="card-label">Память</span>
+        <div className={cardClass(true)}>
+          <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+            Память
+          </span>
           <strong>
             {Math.round(ramU / 1024 / 1024)} / {Math.round(ramT / 1024 / 1024)}{' '}
             MiB использовано
@@ -124,27 +149,33 @@ function SystemInfoView({ data }: { data: Record<string, unknown> }) {
         </div>
       )}
       {typeof cpusN === 'number' && (
-        <div className="card">
-          <span className="card-label">Логических CPU</span>
+        <div className={cardClass()}>
+          <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+            Логических CPU
+          </span>
           <strong>{cpusN}</strong>
         </div>
       )}
       {ips.length > 0 && (
-        <div className="card wide">
-          <span className="card-label">IP-адреса на интерфейсах</span>
-          <p className="mono small">{ips.join(', ')}</p>
+        <div className={cardClass(true)}>
+          <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+            IP-адреса на интерфейсах
+          </span>
+          <p className="font-mono text-xs break-all">{ips.join(', ')}</p>
         </div>
       )}
       {ifaces.length > 0 && (
-        <div className="card wide">
-          <span className="card-label">Сетевые интерфейсы</span>
-          <table className="compact">
+        <div className={cardClass(true)}>
+          <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+            Сетевые интерфейсы
+          </span>
+          <table className="mt-2 w-full border-collapse text-sm">
             <thead>
-              <tr>
-                <th>Имя</th>
-                <th>IP</th>
-                <th>RX байт</th>
-                <th>TX байт</th>
+              <tr className="border-b border-border">
+                <th className="p-2 text-left font-medium">Имя</th>
+                <th className="p-2 text-left font-medium">IP</th>
+                <th className="p-2 text-left font-medium">RX байт</th>
+                <th className="p-2 text-left font-medium">TX байт</th>
               </tr>
             </thead>
             <tbody>
@@ -154,11 +185,15 @@ function SystemInfoView({ data }: { data: Record<string, unknown> }) {
                   ? r.ip_addresses.map(String).join(', ')
                   : '—'
                 return (
-                  <tr key={i}>
-                    <td>{String(r.name ?? '')}</td>
-                    <td className="mono small">{ipList}</td>
-                    <td className="mono">{String(r.received_bytes ?? r.received ?? '')}</td>
-                    <td className="mono">{String(r.transmitted_bytes ?? r.transmitted ?? '')}</td>
+                  <tr key={i} className="border-b border-border/60">
+                    <td className="p-2">{String(r.name ?? '')}</td>
+                    <td className="p-2 font-mono text-xs">{ipList}</td>
+                    <td className="p-2 font-mono">
+                      {String(r.received_bytes ?? r.received ?? '')}
+                    </td>
+                    <td className="p-2 font-mono">
+                      {String(r.transmitted_bytes ?? r.transmitted ?? '')}
+                    </td>
                   </tr>
                 )
               })}
@@ -167,14 +202,16 @@ function SystemInfoView({ data }: { data: Record<string, unknown> }) {
         </div>
       )}
       {mounts.length > 0 && (
-        <div className="card wide">
-          <span className="card-label">Диски (смонтированные)</span>
-          <table className="compact">
+        <div className={cardClass(true)}>
+          <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+            Диски (смонтированные)
+          </span>
+          <table className="mt-2 w-full border-collapse text-sm">
             <thead>
-              <tr>
-                <th>Точка</th>
-                <th>Всего (ГБ)</th>
-                <th>Доступно (ГБ)</th>
+              <tr className="border-b border-border">
+                <th className="p-2 text-left font-medium">Точка</th>
+                <th className="p-2 text-left font-medium">Всего (ГБ)</th>
+                <th className="p-2 text-left font-medium">Доступно (ГБ)</th>
               </tr>
             </thead>
             <tbody>
@@ -185,18 +222,18 @@ function SystemInfoView({ data }: { data: Record<string, unknown> }) {
                 const ab = r.available_bytes
                 if (typeof tb === 'number' && typeof ab === 'number') {
                   return (
-                    <tr key={i}>
-                      <td className="mono small">{mp}</td>
-                      <td>{(tb / 1e9).toFixed(1)}</td>
-                      <td>{(ab / 1e9).toFixed(1)}</td>
+                    <tr key={i} className="border-b border-border/60">
+                      <td className="p-2 font-mono text-xs">{mp}</td>
+                      <td className="p-2">{(tb / 1e9).toFixed(1)}</td>
+                      <td className="p-2">{(ab / 1e9).toFixed(1)}</td>
                     </tr>
                   )
                 }
                 return (
-                  <tr key={i}>
-                    <td className="mono small">{mp}</td>
-                    <td>{String(r.total_gb ?? '')}</td>
-                    <td>{String(r.avail_gb ?? '')}</td>
+                  <tr key={i} className="border-b border-border/60">
+                    <td className="p-2 font-mono text-xs">{mp}</td>
+                    <td className="p-2">{String(r.total_gb ?? '')}</td>
+                    <td className="p-2">{String(r.avail_gb ?? '')}</td>
                   </tr>
                 )
               })}
@@ -204,7 +241,7 @@ function SystemInfoView({ data }: { data: Record<string, unknown> }) {
           </table>
         </div>
       )}
-    </section>
+    </div>
   )
 }
 
@@ -214,16 +251,18 @@ function PortCheckView({ data }: { data: Record<string, unknown> }) {
   return (
     <>
       {to != null && (
-        <p className="muted small">Таймаут TCP: {String(to)} с</p>
+        <p className="text-xs text-muted-foreground">
+          Таймаут TCP: {String(to)} с
+        </p>
       )}
-      <table className="compact">
+      <table className="w-full border-collapse text-sm">
         <thead>
-          <tr>
-            <th>Адрес</th>
-            <th>TCP</th>
-            <th>Время мс</th>
-            <th>Ошибка</th>
-            <th>DNS/resolved</th>
+          <tr className="border-b border-border">
+            <th className="p-2 text-left font-medium">Адрес</th>
+            <th className="p-2 text-left font-medium">TCP</th>
+            <th className="p-2 text-left font-medium">Время мс</th>
+            <th className="p-2 text-left font-medium">Ошибка</th>
+            <th className="p-2 text-left font-medium">DNS/resolved</th>
           </tr>
         </thead>
         <tbody>
@@ -234,22 +273,31 @@ function PortCheckView({ data }: { data: Record<string, unknown> }) {
               ? r.resolved_endpoints.map(String).join(', ')
               : '—'
             return (
-              <tr key={i}>
-                <td className="mono small">
+              <tr key={i} className="border-b border-border/60">
+                <td className="p-2 font-mono text-xs">
                   {String(r.address_tried ?? `${r.host}:${r.port}`)}
                 </td>
-                <td>
-                  <span className={`pill ${open ? 'online' : 'offline'}`}>
+                <td className="p-2">
+                  <span
+                    className={cn(
+                      'inline-block rounded-md px-2 py-0.5 text-xs font-semibold uppercase',
+                      open
+                        ? 'bg-emerald-950/60 text-emerald-400'
+                        : 'bg-muted text-muted-foreground',
+                    )}
+                  >
                     {open ? 'OK' : 'нет'}
                   </span>
                 </td>
-                <td className="mono">
+                <td className="p-2 font-mono">
                   {r.connect_time_ms != null
                     ? Number(r.connect_time_ms).toFixed(1)
                     : '—'}
                 </td>
-                <td className="small muted">{String(r.error ?? '—')}</td>
-                <td className="mono small">{res}</td>
+                <td className="p-2 text-xs text-muted-foreground">
+                  {String(r.error ?? '—')}
+                </td>
+                <td className="p-2 font-mono text-xs">{res}</td>
               </tr>
             )
           })}
@@ -263,55 +311,71 @@ function DiagnosticView({ data }: { data: Record<string, unknown> }) {
   const scenario = String(data.scenario ?? '')
   if (scenario === 'hostname') {
     return (
-      <div className="card wide">
-        <span className="card-label">Hostname</span>
+      <div className={cardClass(true)}>
+        <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+          Hostname
+        </span>
         <strong>{String(data.hostname ?? '')}</strong>
       </div>
     )
   }
   if (scenario === 'uname' || (data.line && scenario !== 'cpu_load')) {
     return (
-      <div className="card wide">
-        <span className="card-label">Сводка ОС</span>
-        <pre className="mono flat">{String(data.line ?? '')}</pre>
+      <div className={cardClass(true)}>
+        <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+          Сводка ОС
+        </span>
+        <pre className="mt-1 whitespace-pre-wrap font-mono text-sm">
+          {String(data.line ?? '')}
+        </pre>
       </div>
     )
   }
   if (scenario === 'interfaces_summary' && Array.isArray(data.names)) {
     return (
-      <div className="card wide">
-        <span className="card-label">Интерфейсы</span>
+      <div className={cardClass(true)}>
+        <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+          Интерфейсы
+        </span>
         <p>{data.names.map(String).join(', ')}</p>
       </div>
     )
   }
   if (scenario === 'memory_disks') {
     return (
-      <section className="cards">
-        <div className="card">
-          <span className="card-label">RAM (MiB)</span>
+      <div className="flex flex-wrap gap-3">
+        <div className={cardClass()}>
+          <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+            RAM (MiB)
+          </span>
           <strong>
             {String(data.ram_used_mb ?? '')} / {String(data.ram_total_mb ?? '')}
           </strong>
         </div>
-        <div className="card">
-          <span className="card-label">Swap (MiB)</span>
+        <div className={cardClass()}>
+          <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+            Swap (MiB)
+          </span>
           <strong>
-            {String(data.swap_used_mb ?? '')} / {String(data.swap_total_mb ?? '')}
+            {String(data.swap_used_mb ?? '')} /{' '}
+            {String(data.swap_total_mb ?? '')}
           </strong>
         </div>
         {Array.isArray(data.disk_mounts) && (
-          <div className="card wide">
-            <span className="card-label">Тома</span>
-            <table className="compact">
+          <div className={cardClass(true)}>
+            <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+              Тома
+            </span>
+            <table className="mt-2 w-full text-sm">
               <tbody>
                 {(data.disk_mounts as unknown[]).map((row, i) => {
                   const r = row as Record<string, unknown>
                   return (
-                    <tr key={i}>
-                      <td>{String(r.mount ?? '')}</td>
-                      <td className="mono">
-                        {String(r.avail_gb ?? '')} / {String(r.total_gb ?? '')} ГБ
+                    <tr key={i} className="border-b border-border/60">
+                      <td className="py-1">{String(r.mount ?? '')}</td>
+                      <td className="py-1 font-mono">
+                        {String(r.avail_gb ?? '')} / {String(r.total_gb ?? '')}{' '}
+                        ГБ
                       </td>
                     </tr>
                   )
@@ -320,19 +384,21 @@ function DiagnosticView({ data }: { data: Record<string, unknown> }) {
             </table>
           </div>
         )}
-      </section>
+      </div>
     )
   }
   if (scenario === 'cpu_load') {
     const g = data.global_usage_percent
     const per = Array.isArray(data.per_cpu) ? data.per_cpu : []
     return (
-      <div className="card wide">
-        <span className="card-label">Загрузка CPU</span>
+      <div className={cardClass(true)}>
+        <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+          Загрузка CPU
+        </span>
         <p>
           <strong>Общая: {String(g ?? '')}%</strong>
         </p>
-        <ul className="small muted">
+        <ul className="mt-2 text-sm text-muted-foreground">
           {per.map((row, i) => {
             const r = row as Record<string, unknown>
             return (
@@ -350,12 +416,18 @@ function DiagnosticView({ data }: { data: Record<string, unknown> }) {
       ? data.addresses.map(String)
       : []
     return (
-      <div className="card wide">
-        <span className="card-label">DNS</span>
+      <div className={cardClass(true)}>
+        <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+          DNS
+        </span>
         <p>
-          <code>{String(data.query ?? '')}</code>
+          <code className="rounded bg-muted px-1.5 py-0.5 text-sm">
+            {String(data.query ?? '')}
+          </code>
         </p>
-        <p className="mono small">{addrs.join(', ') || '—'}</p>
+        <p className="mt-2 font-mono text-sm break-all">
+          {addrs.join(', ') || '—'}
+        </p>
       </div>
     )
   }
@@ -368,16 +440,18 @@ function ReachView({ data }: { data: Record<string, unknown> }) {
   return (
     <>
       {to != null && (
-        <p className="muted small">Таймаут: {String(to)} с</p>
+        <p className="text-xs text-muted-foreground">
+          Таймаут: {String(to)} с
+        </p>
       )}
-      <table className="compact">
+      <table className="w-full border-collapse text-sm">
         <thead>
-          <tr>
-            <th>Цель</th>
-            <th>TCP</th>
-            <th>мс</th>
-            <th>Ошибка</th>
-            <th>Пример DNS</th>
+          <tr className="border-b border-border">
+            <th className="p-2 text-left font-medium">Цель</th>
+            <th className="p-2 text-left font-medium">TCP</th>
+            <th className="p-2 text-left font-medium">мс</th>
+            <th className="p-2 text-left font-medium">Ошибка</th>
+            <th className="p-2 text-left font-medium">Пример DNS</th>
           </tr>
         </thead>
         <tbody>
@@ -388,20 +462,29 @@ function ReachView({ data }: { data: Record<string, unknown> }) {
               ? r.dns_sample.map(String).slice(0, 3).join(', ')
               : '—'
             return (
-              <tr key={i}>
-                <td className="mono small">{String(r.target ?? '')}</td>
-                <td>
-                  <span className={`pill ${ok ? 'online' : 'offline'}`}>
+              <tr key={i} className="border-b border-border/60">
+                <td className="p-2 font-mono text-xs">{String(r.target ?? '')}</td>
+                <td className="p-2">
+                  <span
+                    className={cn(
+                      'inline-block rounded-md px-2 py-0.5 text-xs font-semibold uppercase',
+                      ok
+                        ? 'bg-emerald-950/60 text-emerald-400'
+                        : 'bg-muted text-muted-foreground',
+                    )}
+                  >
                     {ok ? 'OK' : 'нет'}
                   </span>
                 </td>
-                <td className="mono">
+                <td className="p-2 font-mono">
                   {r.connect_time_ms != null
                     ? Number(r.connect_time_ms).toFixed(1)
                     : '—'}
                 </td>
-                <td className="small muted">{String(r.error ?? '—')}</td>
-                <td className="mono small">{dns}</td>
+                <td className="p-2 text-xs text-muted-foreground">
+                  {String(r.error ?? '—')}
+                </td>
+                <td className="p-2 font-mono text-xs">{dns}</td>
               </tr>
             )
           })}
@@ -418,15 +501,19 @@ function BundleView({ data }: { data: Record<string, unknown> }) {
     (k) => !['template', 'description'].includes(k),
   )
   return (
-    <section className="bundle-section">
-      <div className="callout">
+    <section className="space-y-3">
+      <div className="rounded-lg border border-border bg-muted/30 p-4">
         <strong>Шаблон: {template}</strong>
-        <p className="muted small">{desc}</p>
+        <p className="mt-1 text-xs text-muted-foreground">{desc}</p>
       </div>
       {keys.map((k) => (
-        <details key={k} className="subpanel" open={keys.length <= 3}>
-          <summary>{k}</summary>
-          <pre className="mono block small-json">
+        <details
+          key={k}
+          className="rounded-lg border border-border p-3"
+          open={keys.length <= 3}
+        >
+          <summary className="cursor-pointer text-sm font-medium">{k}</summary>
+          <pre className="mt-2 max-h-72 overflow-auto font-mono text-xs">
             {JSON.stringify(data[k], null, 2)}
           </pre>
         </details>

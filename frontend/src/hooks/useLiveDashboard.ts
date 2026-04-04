@@ -1,5 +1,5 @@
 import { useQueryClient } from '@tanstack/react-query'
-import { useEffect, useRef } from 'react'
+import { useEffect } from 'react'
 import { getToken } from '../api'
 import { qk } from '../queryKeys'
 
@@ -10,8 +10,6 @@ const RECONNECT_MS = 4000
  */
 export function useLiveDashboard(enabled: boolean) {
   const qc = useQueryClient()
-  const qcRef = useRef(qc)
-  qcRef.current = qc
 
   useEffect(() => {
     if (!enabled) return
@@ -23,10 +21,9 @@ export function useLiveDashboard(enabled: boolean) {
     let reconnectTimer: ReturnType<typeof setTimeout> | undefined
 
     const invalidate = () => {
-      const q = qcRef.current
-      q.invalidateQueries({ queryKey: qk.agents })
-      q.invalidateQueries({ queryKey: qk.tasks })
-      q.invalidateQueries({ queryKey: qk.metrics })
+      qc.invalidateQueries({ queryKey: qk.agents })
+      qc.invalidateQueries({ queryKey: qk.tasks })
+      qc.invalidateQueries({ queryKey: qk.metrics })
     }
 
     const connect = () => {
@@ -52,5 +49,5 @@ export function useLiveDashboard(enabled: boolean) {
       es?.close()
       es = null
     }
-  }, [enabled])
+  }, [enabled, qc])
 }

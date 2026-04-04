@@ -1,4 +1,7 @@
 const TOKEN_KEY = 'infrahub_token'
+const ROLE_KEY = 'infrahub_role'
+
+export type UserRole = 'admin' | 'operator' | 'observer'
 
 export function getToken(): string | null {
   return localStorage.getItem(TOKEN_KEY)
@@ -8,14 +11,36 @@ export function setToken(t: string) {
   localStorage.setItem(TOKEN_KEY, t)
 }
 
+export function setRole(r: string) {
+  localStorage.setItem(ROLE_KEY, r)
+}
+
+export function getRole(): UserRole | null {
+  const r = localStorage.getItem(ROLE_KEY)
+  if (r === 'admin' || r === 'operator' || r === 'observer') return r
+  return null
+}
+
+export function canOperate(): boolean {
+  const r = getRole()
+  return r === 'admin' || r === 'operator'
+}
+
+export function isAdmin(): boolean {
+  return getRole() === 'admin'
+}
+
 export function clearToken() {
   localStorage.removeItem(TOKEN_KEY)
+  localStorage.removeItem(ROLE_KEY)
 }
 
 async function apiFetch(path: string, init: RequestInit = {}) {
   const token = getToken()
   const headers = new Headers(init.headers)
-  headers.set('Content-Type', 'application/json')
+  if (!headers.has('Content-Type')) {
+    headers.set('Content-Type', 'application/json')
+  }
   if (token) {
     headers.set('Authorization', `Bearer ${token}`)
   }
@@ -36,7 +61,6 @@ async function apiFetch(path: string, init: RequestInit = {}) {
   return JSON.parse(text)
 }
 
-/** 404 → null, без редиректа на логин для «ещё нет результата» */
 async function apiFetchMaybe(path: string): Promise<unknown | null> {
   const token = getToken()
   const headers = new Headers()
@@ -61,15 +85,51 @@ async function apiFetchMaybe(path: string): Promise<unknown | null> {
   return JSON.parse(text)
 }
 
+export async function downloadExport(format: 'json' | 'csv' | 'pdf') {
+  const token = getToken()
+  const res = await fetch(`/api/v1/export/tasks?format=${format}`, {
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+  })
+  if (res.status === 401) {
+    clearToken()
+    window.location.href = '/'
+    throw new Error('unauthorized')
+  }
+  if (!res.ok) {
+    const t = await res.text()
+    throw new Error(t || res.statusText)
+  }
+  const blob = await res.blob()
+  const ext = format === 'pdf' ? 'pdf' : format === 'csv' ? 'csv' : 'json'
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `infrahub-tasks.${ext}`
+  a.click()
+  URL.revokeObjectURL(url)
+}
+
 export const api = {
   login(username: string, password: string) {
     return apiFetch('/api/v1/auth/login', {
       method: 'POST',
       body: JSON.stringify({ username, password }),
-    }) as Promise<{ token: string }>
+    }) as Promise<{ token: string; role: string }>
+  },
+  me() {
+    return apiFetch('/api/v1/me') as Promise<MeResponse>
   },
   agents() {
     return apiFetch('/api/v1/agents') as Promise<Agent[]>
+  },
+  patchAgent(
+    id: string,
+    body: { site?: string; segment?: string; role_tag?: string },
+  ) {
+    return apiFetch(`/api/v1/agents/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(body),
+    }) as Promise<Agent>
   },
   tasks() {
     return apiFetch('/api/v1/tasks') as Promise<Task[]>
@@ -93,13 +153,41 @@ export const api = {
   metricsSummary() {
     return apiFetch('/api/v1/metrics/summary') as Promise<MetricsSummary>
   },
+  analyticsDaily(days?: number) {
+    const q = days != null ? `?days=${days}` : ''
+    return apiFetch(`/api/v1/analytics/daily${q}`) as Promise<DailyAnalytics>
+  },
+  analyticsRanking(days?: number) {
+    const q = days != null ? `?days=${days}` : ''
+    return apiFetch(`/api/v1/analytics/ranking${q}`) as Promise<RankingResponse>
+  },
+  analyticsGroups() {
+    return apiFetch('/api/v1/analytics/groups') as Promise<GroupsResponse>
+  },
+  topologyGraph() {
+    return apiFetch('/api/v1/topology/graph') as Promise<TopologyGraph>
+  },
+  machineDiff(agentId: string, fromTask: string, toTask: string) {
+    return apiFetch(
+      `/api/v1/agents/${agentId}/machine-diff?from_task=${encodeURIComponent(fromTask)}&to_task=${encodeURIComponent(toTask)}`,
+    ) as Promise<MachineDiffResponse>
+  },
+  clearTaskHistory() {
+    return apiFetch('/api/v1/admin/clear-task-history', {
+      method: 'POST',
+      body: JSON.stringify({ confirm: 'DELETE_ALL_TASK_HISTORY' }),
+    }) as Promise<{
+      ok: boolean
+      deleted_task_rows: number
+      redis_queue_keys_cleared: number
+    }>
+  },
   task(id: string) {
     return apiFetch(`/api/v1/tasks/${id}`) as Promise<Task>
   },
   taskResult(id: string) {
     return apiFetch(`/api/v1/tasks/${id}/result`) as Promise<TaskResult>
   },
-  /** null если результат ещё не записан */
   taskResultMaybe(id: string) {
     return apiFetchMaybe(`/api/v1/tasks/${id}/result`) as Promise<TaskResult | null>
   },
@@ -108,12 +196,21 @@ export const api = {
   },
 }
 
+export type MeResponse = {
+  id: string
+  username: string
+  role: string
+}
+
 export type Agent = {
   id: string
   name: string
   created_at: string
   last_seen_at: string | null
   status: string
+  site: string
+  segment: string
+  role_tag: string
 }
 
 export type Task = {
@@ -155,4 +252,84 @@ export type TaskLog = {
   ts: string
   level: string
   message: string
+}
+
+export type DailySeriesRow = {
+  day: string
+  agent_id: string
+  agent_name: string
+  runs: number
+  errors: number
+  avg_duration_seconds: number | null
+}
+
+export type DailyAnalytics = {
+  days_window: number
+  series: DailySeriesRow[]
+}
+
+export type RankingEntry = {
+  agent_id: string
+  name: string
+  finished_tasks: number
+  failed_tasks: number
+  success_rate: number
+  avg_duration_seconds: number | null
+  stability_score: number
+  speed_score: number
+  combined_score: number
+}
+
+export type RankingResponse = {
+  days_window: number
+  ranking: RankingEntry[]
+}
+
+export type GroupsResponse = {
+  by_site: Record<string, number>
+  by_segment: Record<string, number>
+  by_role_tag: Record<string, number>
+}
+
+export type TopologyNode = {
+  id: string
+  label: string
+  type: string
+  site?: string
+  segment?: string
+  role_tag?: string
+  sub?: string
+}
+
+export type TopologyEdge = {
+  source: string
+  target: string
+  kind: string
+  category?: string
+  detail?: string
+}
+
+export type TopologyGraph = {
+  nodes: TopologyNode[]
+  edges: TopologyEdge[]
+  legend?: {
+    control_plane: string
+    metadata: string
+    observed_probe: string
+  }
+}
+
+export type MachineDiffChange = {
+  path: string
+  before: unknown
+  after: unknown
+  change: string
+}
+
+export type MachineDiffResponse = {
+  agent_id: string
+  from_task: string
+  to_task: string
+  changes: MachineDiffChange[]
+  changed_count: number
 }

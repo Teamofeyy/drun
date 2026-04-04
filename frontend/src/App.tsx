@@ -4,7 +4,6 @@ import { getToken } from './api'
 import { Dashboard } from './Dashboard'
 import { Login } from './Login'
 import { TaskDetail } from './TaskDetail'
-import './App.css'
 
 function RequireAuth({ children }: { children: ReactNode }) {
   if (!getToken()) {

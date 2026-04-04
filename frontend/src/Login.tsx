@@ -1,8 +1,19 @@
-import { useState } from 'react'
-import type { FormEvent } from 'react'
 import { useMutation } from '@tanstack/react-query'
+import { useState, type FormEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { api, setToken } from './api'
+import { AppShell } from '@/components/layout/AppShell'
+import { Button } from '@/components/ui/button'
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardFooter,
+  CardHeader,
+  CardTitle,
+} from '@/components/ui/card'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { api, setRole, setToken } from './api'
 
 export function Login() {
   const nav = useNavigate()
@@ -13,6 +24,7 @@ export function Login() {
     mutationFn: () => api.login(user, pass),
     onSuccess: (data) => {
       setToken(data.token)
+      setRole((data.role || 'operator').toLowerCase())
       nav('/app')
     },
   })
@@ -23,38 +35,52 @@ export function Login() {
   }
 
   return (
-    <div className="panel narrow">
-      <h1>InfraHub</h1>
-      <p className="muted">Вход в панель. По умолчанию admin / admin.</p>
-      <form onSubmit={onSubmit} className="stack">
-        <label>
-          Логин
-          <input
-            value={user}
-            onChange={(e) => setUser(e.target.value)}
-            autoComplete="username"
-          />
-        </label>
-        <label>
-          Пароль
-          <input
-            type="password"
-            value={pass}
-            onChange={(e) => setPass(e.target.value)}
-            autoComplete="current-password"
-          />
-        </label>
-        {login.isError && (
-          <p className="error">
-            {login.error instanceof Error
-              ? login.error.message
-              : 'Не удалось войти'}
-          </p>
-        )}
-        <button type="submit" disabled={login.isPending}>
-          {login.isPending ? '…' : 'Войти'}
-        </button>
-      </form>
-    </div>
+    <AppShell>
+      <div className="flex min-h-[70vh] items-center justify-center">
+        <Card className="w-full max-w-md shadow-lg">
+          <CardHeader className="space-y-1">
+            <CardTitle className="text-2xl">InfraHub</CardTitle>
+            <CardDescription>
+              Вход в панель. По умолчанию admin / admin.
+            </CardDescription>
+          </CardHeader>
+          <form onSubmit={onSubmit}>
+            <CardContent className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="user">Логин</Label>
+                <Input
+                  id="user"
+                  value={user}
+                  onChange={(e) => setUser(e.target.value)}
+                  autoComplete="username"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="pass">Пароль</Label>
+                <Input
+                  id="pass"
+                  type="password"
+                  value={pass}
+                  onChange={(e) => setPass(e.target.value)}
+                  autoComplete="current-password"
+                />
+              </div>
+              {login.isError && (
+                <p className="text-sm text-destructive">
+                  {login.error instanceof Error
+                    ? login.error.message
+                    : 'Не удалось войти'}
+                </p>
+              )}
+            </CardContent>
+            <CardFooter>
+              <Button type="submit" className="w-full" disabled={login.isPending}>
+                {login.isPending ? 'Вход…' : 'Войти'}
+              </Button>
+            </CardFooter>
+          </form>
+        </Card>
+      </div>
+    </AppShell>
   )
 }
