@@ -303,7 +303,6 @@ export type ProvisionAgentRequest = {
   ssh_port?: number
   agent_name: string
   infrahub_api_base: string
-  agent_download_url?: string | null
   private_key_pem?: string | null
   ssh_password?: string | null
 }

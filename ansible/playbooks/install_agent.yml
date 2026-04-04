@@ -1,6 +1,6 @@
 ---
 # Установка infrahub-agent на удалённый Linux-хост (systemd).
-# Переменные: infrahub_server, infrahub_agent_name, infrahub_agent_download_url, infrahub_agent_install_path
+# Бинарь копируется с control node (путь в extra-vars infrahub_agent_local_binary).
 - name: Install InfraHub agent
   hosts: all
   become: true
@@ -14,13 +14,12 @@
         state: directory
         mode: "0755"
 
-    - name: Download agent binary
-      ansible.builtin.get_url:
-        url: "{{ infrahub_agent_download_url }}"
+    - name: Copy agent binary from controller
+      ansible.builtin.copy:
+        src: "{{ infrahub_agent_local_binary }}"
         dest: "{{ infrahub_agent_install_path }}"
         mode: "0755"
         force: true
-      when: infrahub_agent_download_url | length > 0
 
     - name: Deploy environment file
       ansible.builtin.template:

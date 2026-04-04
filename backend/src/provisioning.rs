@@ -1,7 +1,7 @@
 //! Одноразовая установка агента по SSH: ansible-playbook во временном каталоге, секреты не персистятся.
 
 use std::collections::BTreeMap;
-use std::io::Write;
+use std::io::{ErrorKind, Write};
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::time::Duration;
@@ -30,9 +30,6 @@ pub struct ProvisionAgentRequest {
     pub agent_name: String,
     /// Базовый URL API InfraHub, как его видит удалённый хост (например https://hub.example:8080)
     pub infrahub_api_base: String,
-    /// URL для get_url (Linux binary). Пусто — взять из INFRAHUB_AGENT_DOWNLOAD_URL сервера
-    #[serde(default)]
-    pub agent_download_url: Option<String>,
     #[serde(default)]
     pub private_key_pem: Option<String>,
     #[serde(default)]
@@ -77,7 +74,8 @@ struct HostConn {
 struct ExtraVars {
     infrahub_server: String,
     infrahub_agent_name: String,
-    infrahub_agent_download_url: String,
+    /// Абсолютный путь к бинарю на машине, где запущен ansible-playbook
+    infrahub_agent_local_binary: String,
     infrahub_agent_install_path: String,
     infrahub_agent_state_dir: String,
 }
@@ -102,17 +100,12 @@ pub async fn provision_agent(
         ));
     }
 
-    let download_url = req
-        .agent_download_url_override
-        .clone()
-        .or_else(|| state.config.agent_download_url_default.clone())
-        .filter(|s| !s.trim().is_empty())
-        .ok_or_else(|| {
-            ApiError::new(
-                axum::http::StatusCode::BAD_REQUEST,
-                "agent_download_url required (or set INFRAHUB_AGENT_DOWNLOAD_URL on server)",
-            )
-        })?;
+    let agent_bin = local_agent_binary_path().ok_or_else(|| {
+        ApiError::new(
+            axum::http::StatusCode::SERVICE_UNAVAILABLE,
+            "local agent binary not found: run `cargo build -p infrahub-agent` from repo root, or set INFRAHUB_AGENT_BINARY",
+        )
+    })?;
 
     let timeout_secs = state.config.provision_timeout_secs;
 
@@ -120,7 +113,7 @@ pub async fn provision_agent(
         &ansible_dir,
         &playbook,
         &req,
-        &download_url,
+        &agent_bin,
         Duration::from_secs(timeout_secs),
     )
     .await;
@@ -178,8 +171,6 @@ struct ValidatedRequest {
     ssh_port: u16,
     agent_name: String,
     infrahub_api_base: String,
-    /// Явный URL из UI (иначе — из конфига сервера)
-    agent_download_url_override: Option<String>,
     private_key_pem: Option<String>,
     ssh_password: Option<String>,
 }
@@ -242,31 +233,12 @@ fn validate_request(body: ProvisionAgentRequest) -> Result<ValidatedRequest, Api
         _ => {}
     }
 
-    let agent_download_url_override = body.agent_download_url.and_then(|s| {
-        let t = s.trim().to_string();
-        if t.is_empty() {
-            None
-        } else {
-            Some(t)
-        }
-    });
-
-    if let Some(ref u) = agent_download_url_override {
-        if !validate_download_url(u) {
-            return Err(ApiError::new(
-                axum::http::StatusCode::BAD_REQUEST,
-                "invalid agent_download_url",
-            ));
-        }
-    }
-
     Ok(ValidatedRequest {
         host,
         ssh_user,
         ssh_port: body.ssh_port,
         agent_name,
         infrahub_api_base: infrahub,
-        agent_download_url_override,
         private_key_pem: key,
         ssh_password: pass,
     })
@@ -313,12 +285,27 @@ fn validate_infrahub_base(s: &str) -> bool {
     lower.starts_with("http://") || lower.starts_with("https://")
 }
 
-fn validate_download_url(s: &str) -> bool {
-    if s.len() > 2048 || s.chars().any(|c| c.is_control()) {
-        return false;
+/// Бинарь `infrahub-agent` из workspace (`target/debug|release`) или `INFRAHUB_AGENT_BINARY`.
+fn local_agent_binary_path() -> Option<PathBuf> {
+    if let Ok(p) = std::env::var("INFRAHUB_AGENT_BINARY") {
+        let pb = PathBuf::from(p.trim());
+        if pb.is_file() {
+            return pb.canonicalize().ok().or(Some(pb));
+        }
     }
-    let lower = s.to_ascii_lowercase();
-    lower.starts_with("http://") || lower.starts_with("https://")
+    let ws_target = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../target");
+    for rel in ["debug/infrahub-agent", "release/infrahub-agent"] {
+        let cand = ws_target.join(rel);
+        if cand.is_file() {
+            return cand.canonicalize().ok().or(Some(cand));
+        }
+    }
+    None
+}
+
+/// Корень workspace (рядом с каталогом `backend/`).
+fn workspace_root() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("..")
 }
 
 fn ansible_directory() -> PathBuf {
@@ -328,14 +315,59 @@ fn ansible_directory() -> PathBuf {
             return p;
         }
     }
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../ansible")
+    workspace_root().join("ansible")
+}
+
+fn canonicalize_if_file(p: PathBuf) -> PathBuf {
+    p.canonicalize().unwrap_or(p)
+}
+
+/// Запуск через `uv run ansible-playbook` из каталога с `pyproject.toml` (см. INFRAHUB_UV_PROJECT_DIR).
+fn ansible_use_uv() -> bool {
+    std::env::var("INFRAHUB_ANSIBLE_USE_UV")
+        .map(|v| matches!(v.to_lowercase().as_str(), "1" | "true" | "yes"))
+        .unwrap_or(false)
+}
+
+fn uv_project_directory() -> PathBuf {
+    if let Ok(s) = std::env::var("INFRAHUB_UV_PROJECT_DIR") {
+        let p = PathBuf::from(s.trim());
+        if p.is_dir() {
+            return p;
+        }
+    }
+    workspace_root()
+}
+
+/// Путь к `ansible-playbook`: env, затем venv в корне репо / в `ansible/`, системные пути, иначе имя в `PATH`.
+fn ansible_playbook_executable() -> PathBuf {
+    if let Ok(p) = std::env::var("INFRAHUB_ANSIBLE_PLAYBOOK") {
+        let t = p.trim();
+        if !t.is_empty() {
+            return PathBuf::from(t);
+        }
+    }
+    for venv_pb in [
+        workspace_root().join(".venv/bin/ansible-playbook"),
+        ansible_directory().join(".venv/bin/ansible-playbook"),
+    ] {
+        if venv_pb.is_file() {
+            return canonicalize_if_file(venv_pb);
+        }
+    }
+    for c in ["/usr/bin/ansible-playbook", "/usr/local/bin/ansible-playbook"] {
+        if Path::new(c).is_file() {
+            return PathBuf::from(c);
+        }
+    }
+    PathBuf::from("ansible-playbook")
 }
 
 async fn run_ansible_playbook(
     ansible_dir: &Path,
     playbook: &Path,
     req: &ValidatedRequest,
-    download_url: &str,
+    agent_binary: &Path,
     timeout_dur: Duration,
 ) -> Result<AnsibleOutput, String> {
     let tmp = TempDir::new().map_err(|e| format!("tempdir: {e}"))?;
@@ -381,10 +413,14 @@ async fn run_ansible_playbook(
         .await
         .map_err(|e| format!("write inventory: {e}"))?;
 
+    let bin_str = agent_binary
+        .to_str()
+        .ok_or_else(|| "agent binary path is not valid UTF-8".to_string())?
+        .to_string();
     let extra = ExtraVars {
         infrahub_server: req.infrahub_api_base.clone(),
         infrahub_agent_name: req.agent_name.clone(),
-        infrahub_agent_download_url: download_url.to_string(),
+        infrahub_agent_local_binary: bin_str,
         infrahub_agent_install_path: "/usr/local/bin/infrahub-agent".into(),
         infrahub_agent_state_dir: "/var/lib/infrahub-agent".into(),
     };
@@ -403,24 +439,66 @@ async fn run_ansible_playbook(
         .to_str()
         .ok_or_else(|| "extra path utf-8".to_string())?;
 
-    let mut cmd = Command::new("ansible-playbook");
-    cmd.arg("-i")
-        .arg(inv_str)
-        .arg("-e")
-        .arg(format!("@{extra_str}"))
-        .arg(playbook_str)
-        .current_dir(ansible_dir)
-        .stdout(Stdio::piped())
+    let use_uv = ansible_use_uv();
+    let err_hint = if use_uv {
+        format!(
+            "uv run ansible-playbook (cwd {}, INFRAHUB_ANSIBLE_USE_UV=1)",
+            uv_project_directory().display()
+        )
+    } else {
+        ansible_playbook_executable().display().to_string()
+    };
+
+    let mut cmd = if use_uv {
+        let mut c = Command::new("uv");
+        c.args([
+            "run",
+            "ansible-playbook",
+            "-i",
+            inv_str,
+            "-e",
+            &format!("@{extra_str}"),
+            playbook_str,
+        ]);
+        c.current_dir(uv_project_directory());
+        c
+    } else {
+        let apb = ansible_playbook_executable();
+        let mut c = Command::new(&apb);
+        c.arg("-i")
+            .arg(inv_str)
+            .arg("-e")
+            .arg(format!("@{extra_str}"))
+            .arg(playbook_str);
+        c.current_dir(ansible_dir);
+        c
+    };
+
+    cmd.stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .env(
             "ANSIBLE_SSH_COMMON_ARGS",
             "-o StrictHostKeyChecking=accept-new",
         );
+    let cfg = ansible_dir.join("ansible.cfg");
+    if cfg.is_file() {
+        if let Some(s) = cfg.to_str() {
+            cmd.env("ANSIBLE_CONFIG", s);
+        }
+    }
 
     let output = tokio::time::timeout(timeout_dur, cmd.output())
         .await
         .map_err(|_| format!("ansible-playbook timed out after {timeout_dur:?}"))?
-        .map_err(|e| format!("ansible-playbook spawn: {e}"))?;
+        .map_err(|e| {
+            if e.kind() == ErrorKind::NotFound {
+                format!(
+                    "Ansible launcher not found (tried: {err_hint}). Install ansible (e.g. `uv sync` in ansible/ or your uv project), set INFRAHUB_ANSIBLE_PLAYBOOK to .venv/bin/ansible-playbook, or INFRAHUB_ANSIBLE_USE_UV=1 with INFRAHUB_UV_PROJECT_DIR. SSH password needs `sshpass` on the controller."
+                )
+            } else {
+                format!("ansible-playbook spawn: {e}")
+            }
+        })?;
 
     let stdout = String::from_utf8_lossy(&output.stdout).into_owned();
     let stderr = String::from_utf8_lossy(&output.stderr).into_owned();

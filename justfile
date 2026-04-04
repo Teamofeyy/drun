@@ -1,8 +1,6 @@
 # Start all services
 dev:
-  #!/bin/bash
-  # Kill any existing processes first
-  just --justfile {{justfile()}} stop 2>/dev/null || true
+  just dev-kill || true
 
   just dev-front &
   just dev-back &
@@ -13,12 +11,19 @@ dev-front:
   cd frontend && npm i && npm run dev
 
 # Start Master
-# Remote agent install (POST /api/v1/admin/provision-agent): на машине с backend нужны
-# `ansible-playbook` (пакет ansible-core), OpenSSH client; для входа по паролю — `sshpass`.
-# Опционально: INFRAHUB_AGENT_DOWNLOAD_URL — URL Linux-бинаря агента; INFRAHUB_ANSIBLE_DIR — путь к каталогу ansible в репозитории;
+# Remote agent install (POST /api/v1/admin/provision-agent): ansible на машине с backend.
+# Варианты: (1) `cd ansible && uv sync` — бинарь будет ansible/.venv/bin/ansible-playbook (подхватится автоматически);
+# (2) INFRAHUB_ANSIBLE_USE_UV=1 и `uv run` из каталога с pyproject (INFRAHUB_UV_PROJECT_DIR, по умолчанию корень репо);
+# (3) INFRAHUB_ANSIBLE_PLAYBOOK=/полный/путь/ansible-playbook.
+# SSH по паролю: на controller обычно нужен `sshpass`.
+# Бинарь для provision: соберите `cargo build -p infrahub-agent` (workspace target/debug|release/infrahub-agent) или задайте INFRAHUB_AGENT_BINARY.
+# INFRAHUB_ANSIBLE_DIR — путь к каталогу ansible в репозитории;
 # INFRAHUB_PROVISION_TIMEOUT_SECS (по умолчанию 1800, clamp 60–7200).
 dev-back:
-  cd backend && cargo run
+  # После добавления API-маршрутов нужен перезапуск именно из `cargo run`/`target/.../infrahub-backend`
+  # со свежей сборкой, иначе новые пути (например provision-agent) дадут 404 на :8080.
+  # Сборка агента нужна для POST /admin/provision-agent (копирование target/*/infrahub-agent).
+  cargo run -p infrahub-backend
 
 # Start Agent
 dev-agent:
@@ -26,7 +31,7 @@ dev-agent:
 
 # Stop all background processes
 dev-kill:
-  #!/bin/bash
+  pkill -f "infrahub-backend" || true
   pkill -f "npm run dev" || true
   pkill -f "cargo run" || true
   pkill -f "infrahub-agent" || true

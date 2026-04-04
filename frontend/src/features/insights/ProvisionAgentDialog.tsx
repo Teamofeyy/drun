@@ -29,7 +29,6 @@ export function ProvisionAgentDialog({ open, onOpenChange }: Props) {
   const [sshPort, setSshPort] = useState('22')
   const [agentName, setAgentName] = useState('')
   const [apiBase, setApiBase] = useState('')
-  const [downloadUrl, setDownloadUrl] = useState('')
   const [authKind, setAuthKind] = useState<'key' | 'password'>('key')
   const [privateKey, setPrivateKey] = useState('')
   const [sshPassword, setSshPassword] = useState('')
@@ -54,6 +53,11 @@ export function ProvisionAgentDialog({ open, onOpenChange }: Props) {
       if (!Number.isFinite(port) || port < 1 || port > 65535) {
         return Promise.reject(new Error('Некорректный SSH-порт'))
       }
+      if (!host.trim() || !sshUser.trim() || !agentName.trim() || !apiBase.trim()) {
+        return Promise.reject(
+          new Error('Заполните хост, SSH-пользователя, имя агента и URL API'),
+        )
+      }
       const body: Parameters<typeof api.provisionAgent>[0] = {
         host: host.trim(),
         ssh_user: sshUser.trim(),
@@ -61,8 +65,6 @@ export function ProvisionAgentDialog({ open, onOpenChange }: Props) {
         agent_name: agentName.trim(),
         infrahub_api_base: apiBase.trim(),
       }
-      const du = downloadUrl.trim()
-      if (du) body.agent_download_url = du
       if (authKind === 'key') {
         body.private_key_pem = privateKey.trim() || null
         body.ssh_password = null
@@ -98,9 +100,10 @@ export function ProvisionAgentDialog({ open, onOpenChange }: Props) {
           <DialogTitle>Установить агента по SSH</DialogTitle>
           <DialogDescription>
             Данные и ключ отправляются один раз на сервер InfraHub и не
-            сохраняются. На хосте выполняется ansible-playbook (нужны{' '}
-            <code className="text-xs">ansible-core</code> и доступ по сети с
-            backend к SSH).
+            сохраняются. Бинарь агента копируется с машины backend из сборки
+            workspace (<code className="text-xs">target/…/infrahub-agent</code>
+            ). Нужны <code className="text-xs">ansible-core</code> и SSH с
+            backend до целевого хоста.
           </DialogDescription>
         </DialogHeader>
         <div className="grid gap-4 py-2">
@@ -162,18 +165,6 @@ export function ProvisionAgentDialog({ open, onOpenChange }: Props) {
               Как удалённый хост достучится до InfraHub (часто тот же origin,
               что у браузера).
             </p>
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor={`${baseId}-dl`}>
-              URL бинаря агента (опционально)
-            </Label>
-            <Input
-              id={`${baseId}-dl`}
-              value={downloadUrl}
-              onChange={(e) => setDownloadUrl(e.target.value)}
-              placeholder="Пусто — взять INFRAHUB_AGENT_DOWNLOAD_URL с сервера"
-              autoComplete="off"
-            />
           </div>
           <fieldset className="space-y-3 rounded-md border border-border p-3">
             <legend className="px-1 text-sm font-medium">Аутентификация SSH</legend>
