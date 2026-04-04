@@ -1,0 +1,16 @@
+html,
+body,
+#root {
+  min-height: 100%;
+}
+
+body {
+  margin: 0;
+}
+
+#root {
+  max-width: none;
+  margin: 0;
+  text-align: initial;
+  border: none;
+}
