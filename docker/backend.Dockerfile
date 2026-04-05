@@ -4,9 +4,8 @@ WORKDIR /app
 
 COPY Cargo.toml Cargo.lock ./
 COPY backend ./backend
-COPY agent ./agent
 
-RUN cargo build --release -p infrahub-backend -p infrahub-agent
+RUN cargo build --release -p infrahub-backend
 
 FROM debian:bookworm-slim AS runtime
 RUN apt-get update \
@@ -25,14 +24,9 @@ RUN uv sync --frozen --no-install-project
 
 RUN mkdir -p /usr/local/lib/infrahub
 COPY --from=builder /app/target/release/infrahub-backend /usr/local/bin/infrahub-backend
-COPY --from=builder /app/target/release/infrahub-agent /usr/local/lib/infrahub/infrahub-agent
 
 ENV BIND=0.0.0.0:8080
 ENV INFRAHUB_ANSIBLE_DIR=/opt/infrahub/ansible
-ENV INFRAHUB_AGENT_BINARY=/usr/local/lib/infrahub/infrahub-agent
 EXPOSE 8080
-
-HEALTHCHECK --interval=30s --timeout=5s --start-period=45s --retries=3 \
-  CMD wget -qO- http://127.0.0.1:8080/health > /dev/null || exit 1
 
 CMD ["infrahub-backend"]

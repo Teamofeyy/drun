@@ -160,7 +160,6 @@ pub struct CreateTaskRequest {
     pub kind: String,
     #[serde(default)]
     pub payload: serde_json::Value,
-    /// Повторные попытки при ошибке агента (0 = только одна попытка)
     #[serde(default = "default_max_retries")]
     pub max_retries: i32,
 }

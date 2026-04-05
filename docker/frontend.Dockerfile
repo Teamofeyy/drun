@@ -10,7 +10,6 @@ RUN npm run build
 
 FROM caddy:2.10-alpine
 COPY docker/Caddyfile /etc/caddy/Caddyfile
-COPY docker/Caddyfile.internal /etc/caddy/Caddyfile.internal
 COPY --from=build /app/dist /srv
 
 EXPOSE 80
