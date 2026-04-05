@@ -1,7 +1,12 @@
-import { useMutation, useQueryClient } from '@tanstack/react-query'
+import {
+  useMutation,
+  useQuery,
+  useQueryClient,
+} from '@tanstack/react-query'
 import { useEffect, useId, useState } from 'react'
 import { toast } from 'sonner'
 import {
+  fetchProvisionAgentDefaults,
   provisionAgent,
   type ProvisionAgentRequest,
   type ProvisionAgentResponse,
@@ -18,6 +23,7 @@ import {
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
+import { defaultInfrahubApiBase } from '@/lib/defaultInfrahubApiBase'
 import { qk } from '@/queryKeys'
 
 type Props = {
@@ -40,14 +46,16 @@ export function ProvisionAgentDialog({ open, onOpenChange }: Props) {
   )
 
   useEffect(() => {
-    if (open && typeof window !== 'undefined' && !apiBase) {
-      const h = window.location.hostname
-      // localhost в браузере ≠ адрес InfraHub для удалённого агента; API обычно :8080, не Vite :5173
-      if (h !== 'localhost' && h !== '127.0.0.1') {
-        setApiBase(`${window.location.protocol}//${h}:8080`)
-      }
+    if (open && typeof window !== 'undefined') {
+      setApiBase(defaultInfrahubApiBase())
     }
-  }, [open, apiBase])
+  }, [open])
+
+  const releaseDefaults = useQuery({
+    queryKey: qk.provisionAgentDefaults,
+    queryFn: fetchProvisionAgentDefaults,
+    enabled: open,
+  })
 
   useEffect(() => {
     if (!open) return
@@ -124,13 +132,11 @@ export function ProvisionAgentDialog({ open, onOpenChange }: Props) {
           <DialogTitle>Установить агента по SSH</DialogTitle>
           <DialogDescription>
             Данные и ключ отправляются один раз на сервер InfraHub и не
-            сохраняются. Бинарь агента копируется с машины backend из сборки
-            workspace (<code className="text-xs">target/…/infrahub-agent</code>
-            ). Нужны <code className="text-xs">ansible-core</code> и SSH с
-            backend до целевого хоста. Имя агента при регистрации берётся с ноды
-            (короткое имя хоста после{' '}
-            <code className="text-xs">gather_facts</code>,{' '}
-            <code className="text-xs">ansible_hostname</code>).
+            сохраняются. Бинарь агента скачивается на ноду с GitHub Releases
+            (nightly musl по <code className="text-xs">ansible_architecture</code>
+            : x86_64 / aarch64). Нужны <code className="text-xs">ansible-core</code>{' '}
+            и исходящий доступ с ноды к GitHub. Имя агента —{' '}
+            <code className="text-xs">ansible_hostname</code> с ноды.
           </DialogDescription>
         </DialogHeader>
         <div className="grid gap-4 py-2">
@@ -178,12 +184,28 @@ export function ProvisionAgentDialog({ open, onOpenChange }: Props) {
               autoComplete="off"
             />
             <p className="text-xs text-muted-foreground">
-              Адрес HTTP API InfraHub так, как его должен открыть{' '}
-              <strong>целевой сервер</strong> (не localhost с его стороны). Пример:{' '}
-              <code className="rounded bg-muted px-1 py-0.5 text-[0.65rem]">
-                http://&lt;ваш-сервер&gt;:8080
+              Подставляется автоматически (порт <strong>8080</strong>, не Vite).
+              Для удалённой ноды замените на адрес API, доступный <em>с той машины</em>.
+            </p>
+          </div>
+          <div className="space-y-2 rounded-md border border-border bg-muted/30 px-3 py-2">
+            <p className="text-sm font-medium">Каталог URL релиза агента (GitHub)</p>
+            {releaseDefaults.isPending ? (
+              <p className="text-xs text-muted-foreground">Загрузка…</p>
+            ) : releaseDefaults.isError ? (
+              <p className="text-xs text-destructive">
+                Не удалось получить настройки с сервера
+              </p>
+            ) : (
+              <code className="break-all text-xs">
+                {releaseDefaults.data?.infrahub_agent_release_base}
               </code>
-              . Если UI открыт с localhost — поле нужно заполнить вручную.
+            )}
+            <p className="text-xs text-muted-foreground">
+              Задаётся на сервере InfraHub (
+              <code className="rounded bg-muted px-1">INFRAHUB_AGENT_RELEASE_BASE</code>
+              ). Ansible собирает URL бинаря по{' '}
+              <code className="rounded bg-muted px-1">ansible_architecture</code>.
             </p>
           </div>
           <fieldset className="space-y-3 rounded-md border border-border p-3">
@@ -223,14 +245,10 @@ export function ProvisionAgentDialog({ open, onOpenChange }: Props) {
                   autoComplete="off"
                 />
                 <p className="text-xs text-muted-foreground">
-                  <strong className="font-medium text-foreground/90">Как получить:</strong> скопируйте
-                  целиком <em>приватный</em> файл (без <code className="rounded bg-muted px-1">.pub</code>
-                  ), чаще всего{' '}
-                  <code className="rounded bg-muted px-1">~/.ssh/id_ed25519</code> или{' '}
-                  <code className="rounded bg-muted px-1">id_rsa</code> — например{' '}
-                  <code className="rounded bg-muted px-1">cat ~/.ssh/id_ed25519</code>. На ноде в{' '}
-                  <code className="rounded bg-muted px-1">authorized_keys</code> должен быть парный{' '}
-                  <em>публичный</em> ключ.
+                  Обычно <code className="rounded bg-muted px-1">cat ~/.ssh/id_ed25519</code> (без{' '}
+                  <code className="rounded bg-muted px-1">.pub</code>); на ноде — ваш{' '}
+                  <code className="rounded bg-muted px-1">.pub</code> в{' '}
+                  <code className="rounded bg-muted px-1">authorized_keys</code>.
                 </p>
               </div>
             ) : (

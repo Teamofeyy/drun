@@ -1,7 +1,8 @@
-import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useEffect, useId, useState } from 'react'
 import { toast } from 'sonner'
 import {
+  api,
   uninstallAgent,
   type ProvisionAgentResponse,
   type UninstallAgentRequest,
@@ -18,6 +19,7 @@ import {
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
+import { cn } from '@/lib/utils'
 import { qk } from '@/queryKeys'
 
 type Props = {
@@ -34,13 +36,21 @@ export function UninstallAgentDialog({ open, onOpenChange }: Props) {
   const [authKind, setAuthKind] = useState<'key' | 'password'>('key')
   const [privateKey, setPrivateKey] = useState('')
   const [sshPassword, setSshPassword] = useState('')
+  const [removeAgentId, setRemoveAgentId] = useState('')
   const [lastResult, setLastResult] = useState<ProvisionAgentResponse | null>(
     null,
   )
 
+  const agentsQ = useQuery({
+    queryKey: qk.agents,
+    queryFn: api.agents,
+    enabled: open,
+  })
+
   useEffect(() => {
     if (!open) return
     setLastResult(null)
+    setRemoveAgentId('')
   }, [open])
 
   const run = useMutation({
@@ -56,6 +66,7 @@ export function UninstallAgentDialog({ open, onOpenChange }: Props) {
         host: host.trim(),
         ssh_user: sshUser.trim(),
         ssh_port: port,
+        remove_agent_id: removeAgentId.trim() || null,
       }
       if (authKind === 'key') {
         body.private_key_pem = privateKey.trim() || null
@@ -93,8 +104,8 @@ export function UninstallAgentDialog({ open, onOpenChange }: Props) {
           <DialogDescription>
             Останавливается unit <code className="text-xs">infrahub-agent</code>,
             удаляются unit-файл, <code className="text-xs">/etc/default/infrahub-agent</code>,
-            бинарь и каталог состояния на целевом хосте. Запись агента в InfraHub не
-            удаляется — узел перестанет слать heartbeat.
+            бинарь и каталог состояния на целевом хосте. Ниже можно выбрать агента в InfraHub —
+            после успешного снятия с ноды запись удалится, и узел пропадёт с топологии.
           </DialogDescription>
         </DialogHeader>
         <div className="grid gap-4 py-2">
@@ -129,8 +140,31 @@ export function UninstallAgentDialog({ open, onOpenChange }: Props) {
               max={65535}
               value={sshPort}
               onChange={(e) => setSshPort(e.target.value)}
-              className="max-w-[10rem]"
+              className="max-w-40"
             />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor={`${baseId}-agent`}>Запись в InfraHub (топология)</Label>
+            <select
+              id={`${baseId}-agent`}
+              value={removeAgentId}
+              onChange={(e) => setRemoveAgentId(e.target.value)}
+              disabled={agentsQ.isPending}
+              className={cn(
+                'flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm',
+                'ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+              )}
+            >
+              <option value="">Не удалять запись (только с ноды)</option>
+              {(agentsQ.data ?? []).map((a) => (
+                <option key={a.id} value={a.id}>
+                  {a.name}
+                </option>
+              ))}
+            </select>
+            {agentsQ.isError ? (
+              <p className="text-xs text-destructive">Не удалось загрузить список агентов</p>
+            ) : null}
           </div>
           <fieldset className="space-y-3 rounded-md border border-border p-3">
             <legend className="px-1 text-sm font-medium">Аутентификация SSH</legend>

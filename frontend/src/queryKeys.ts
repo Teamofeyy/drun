@@ -9,6 +9,7 @@ export const qk = {
   topology: ['topology', 'graph'] as const,
   scenarios: ['scenarios'] as const,
   scenario: (id: string) => ['scenario', id] as const,
+  provisionAgentDefaults: ['provision-agent', 'defaults'] as const,
   task: (id: string) => ['task', id] as const,
   taskResult: (id: string) => ['taskResult', id] as const,
   taskLogs: (id: string) => ['taskLogs', id] as const,

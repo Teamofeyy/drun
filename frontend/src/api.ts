@@ -114,14 +114,22 @@ export type ProvisionAgentRequest = {
   ssh_user: string
   ssh_port?: number
   infrahub_api_base: string
+  /** Если не передать — backend подставит значение из конфигурации сервера. */
+  infrahub_agent_release_base?: string | null
   private_key_pem?: string | null
   ssh_password?: string | null
+}
+
+export type ProvisionAgentDefaultsResponse = {
+  infrahub_agent_release_base: string
 }
 
 export type UninstallAgentRequest = {
   host: string
   ssh_user: string
   ssh_port?: number
+  /** Если задан — после успешного снятия с ноды удаляется запись агента (топология обновится). */
+  remove_agent_id?: string | null
   private_key_pem?: string | null
   ssh_password?: string | null
 }
@@ -132,6 +140,11 @@ export type ProvisionAgentResponse = {
   stdout: string
   stderr: string
   message: string
+}
+
+/** Значения по умолчанию для установки агента (каталог релиза задаётся на сервере). */
+export function fetchProvisionAgentDefaults(): Promise<ProvisionAgentDefaultsResponse> {
+  return apiFetch('/api/v1/admin/provision-agent-defaults') as Promise<ProvisionAgentDefaultsResponse>
 }
 
 /** Установка агента по SSH (также доступно как `api.provisionAgent`). */
@@ -236,6 +249,7 @@ export const api = {
     return apiFetch('/api/v1/topology/graph') as Promise<TopologyGraph>
   },
   provisionAgent,
+  fetchProvisionAgentDefaults,
   uninstallAgent,
   machineDiff(agentId: string, fromTask: string, toTask: string) {
     return apiFetch(
