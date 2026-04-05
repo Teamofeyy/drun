@@ -25,14 +25,14 @@
         state: directory
         mode: "0755"
 
-    - name: Map architecture fact to nightly musl asset name
+    - name: Map architecture fact to prebuilt musl asset name
       ansible.builtin.set_fact:
         infrahub_agent_download_basename: "{{ {'x86_64': 'infrahub-agent-x86_64-unknown-linux-musl', 'amd64': 'infrahub-agent-x86_64-unknown-linux-musl', 'aarch64': 'infrahub-agent-aarch64-unknown-linux-musl', 'arm64': 'infrahub-agent-aarch64-unknown-linux-musl'}.get(ansible_facts['architecture'], '') }}"
 
     - name: Fail when no prebuilt binary for this architecture
       ansible.builtin.fail:
         msg: >-
-          Архитектура «{{ ansible_facts['architecture'] }}» не совпадает с готовыми nightly-сборками
+          Архитектура «{{ ansible_facts['architecture'] }}» не совпадает с готовыми musl-сборками
           (x86_64 / aarch64, linux musl). Соберите агент из исходников: в релизе GitHub
           используйте «Source code (zip)» или «Source code (tar.gz)»
           (https://github.com/Teamofeyy/drun/releases).

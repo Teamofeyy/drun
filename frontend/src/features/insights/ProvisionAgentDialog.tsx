@@ -135,7 +135,7 @@ export function ProvisionAgentDialog({ open, onOpenChange }: Props) {
           <DialogDescription>
             Данные и ключ отправляются один раз на сервер InfraHub и не
             сохраняются. Бинарь агента скачивается на ноду с GitHub Releases
-            (nightly musl по <code className="text-xs">ansible_architecture</code>
+            (stable musl по <code className="text-xs">ansible_architecture</code>
             : x86_64 / aarch64). Нужны <code className="text-xs">ansible-core</code>{' '}
             и исходящий доступ с ноды к GitHub. Имя агента —{' '}
             <code className="text-xs">ansible_hostname</code> с ноды.

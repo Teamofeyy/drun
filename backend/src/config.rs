@@ -44,7 +44,7 @@ impl Config {
                 .clamp(60, 7200),
             default_infrahub_agent_release_base: env::var("INFRAHUB_AGENT_RELEASE_BASE")
                 .unwrap_or_else(|_| {
-                    "https://github.com/Teamofeyy/drun/releases/download/nightly".into()
+                    "https://github.com/Teamofeyy/drun/releases/download/stable".into()
                 })
                 .trim_end_matches('/')
                 .to_string(),
