@@ -1,5 +1,3 @@
-//! Опасные операции только для администратора.
-
 use axum::{extract::State, http::HeaderMap, Json};
 use sea_orm::{EntityTrait, TransactionTrait};
 use serde_json::json;
@@ -9,7 +7,6 @@ use crate::{
     session::resolve_session, state::AppState,
 };
 
-/// Удаляет все задачи, результаты, логи и очищает Redis-очереди агентов.
 pub async fn wipe_task_history(
     State(state): State<AppState>,
     headers: HeaderMap,

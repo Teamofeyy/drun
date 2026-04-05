@@ -1,5 +1,3 @@
-//! Агрегированная аналитика по задачам и агентам.
-
 use axum::{
     extract::{Query, State},
     http::HeaderMap,
@@ -36,7 +34,7 @@ struct DailyAgg {
     durations: Vec<f64>,
 }
 
-/// Сводка по календарным дням (UTC): запуски, ошибки, среднее время done-задач.
+
 pub async fn daily_metrics(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -132,7 +130,6 @@ struct RankAgg {
     durations: Vec<f64>,
 }
 
-/// Рейтинг агентов: стабильность (доля успехов) и скорость (обратная к среднему времени).
 pub async fn agent_ranking(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -232,7 +229,6 @@ pub async fn agent_ranking(
     Ok(Json(json!({ "days_window": days, "ranking": ranked })))
 }
 
-/// Группировка агентов по площадке, сегменту и тегу роли.
 pub async fn agent_groups(
     State(state): State<AppState>,
     headers: HeaderMap,

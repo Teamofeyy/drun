@@ -1,7 +1,4 @@
-//! Экспорт истории задач в JSON, CSV и PDF.
-
 use std::io::BufWriter;
-
 use axum::{
     body::Body,
     extract::{Query, State},

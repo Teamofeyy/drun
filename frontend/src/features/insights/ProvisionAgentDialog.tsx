@@ -41,10 +41,10 @@ export function ProvisionAgentDialog({ open, onOpenChange }: Props) {
 
   useEffect(() => {
     if (open && typeof window !== 'undefined' && !apiBase) {
-      const h = window.location.hostname
-      // localhost в браузере ≠ адрес InfraHub для удалённого агента; API обычно :8080, не Vite :5173
-      if (h !== 'localhost' && h !== '127.0.0.1') {
-        setApiBase(`${window.location.protocol}//${h}:8080`)
+      const { hostname, origin } = window.location
+      // На проде API теперь идёт через тот же origin за Caddy; localhost пользователь заполняет вручную.
+      if (hostname !== 'localhost' && hostname !== '127.0.0.1') {
+        setApiBase(origin)
       }
     }
   }, [open, apiBase])
@@ -79,7 +79,7 @@ export function ProvisionAgentDialog({ open, onOpenChange }: Props) {
       ) {
         return Promise.reject(
           new Error(
-            'URL API указывает на localhost, а SSH-хост — удалённый сервер: с него до InfraHub так не подключиться. Укажите адрес API, доступный с целевой машины (публичный IP или DNS и порт, обычно :8080), и откройте порт на файрволе.',
+            'URL API указывает на localhost, а SSH-хост — удалённый сервер: с него до InfraHub так не подключиться. Укажите публичный IP или DNS InfraHub, доступный с целевой машины.',
           ),
         )
       }
@@ -174,14 +174,14 @@ export function ProvisionAgentDialog({ open, onOpenChange }: Props) {
               id={`${baseId}-api`}
               value={apiBase}
               onChange={(e) => setApiBase(e.target.value)}
-              placeholder="https://infrahub.example:8080"
+              placeholder="https://infrahub.example.com"
               autoComplete="off"
             />
             <p className="text-xs text-muted-foreground">
               Адрес HTTP API InfraHub так, как его должен открыть{' '}
               <strong>целевой сервер</strong> (не localhost с его стороны). Пример:{' '}
               <code className="rounded bg-muted px-1 py-0.5 text-[0.65rem]">
-                http://&lt;ваш-сервер&gt;:8080
+                https://infrahub.example.com
               </code>
               . Если UI открыт с localhost — поле нужно заполнить вручную.
             </p>

@@ -1,5 +1,3 @@
-//! Сравнение двух снимков system_info по результатам задач.
-
 use axum::{
     extract::{Path, Query, State},
     http::HeaderMap,
