@@ -90,6 +90,10 @@ async fn main() -> anyhow::Result<()> {
             post(admin_api::wipe_task_history),
         )
         .route(
+            "/api/v1/admin/provision-agent-defaults",
+            get(provisioning::provision_agent_defaults),
+        )
+        .route(
             "/api/v1/admin/provision-agent",
             post(provisioning::provision_agent),
         )

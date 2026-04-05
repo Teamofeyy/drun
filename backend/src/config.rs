@@ -12,6 +12,8 @@ pub struct Config {
     pub agent_max_concurrent_tasks: i64,
     /// Таймаут `ansible-playbook` для provision-agent (секунды)
     pub provision_timeout_secs: u64,
+    /// Дефолт каталога URL релиза агента (GET /admin/provision-agent-defaults и fallback в POST, если поле не прислали)
+    pub default_infrahub_agent_release_base: String,
 }
 
 impl Config {
@@ -38,6 +40,12 @@ impl Config {
                 .and_then(|s| s.parse().ok())
                 .unwrap_or(1800)
                 .clamp(60, 7200),
+            default_infrahub_agent_release_base: env::var("INFRAHUB_AGENT_RELEASE_BASE")
+                .unwrap_or_else(|_| {
+                    "https://github.com/Teamofeyy/drun/releases/download/nightly".into()
+                })
+                .trim_end_matches('/')
+                .to_string(),
         })
     }
 }

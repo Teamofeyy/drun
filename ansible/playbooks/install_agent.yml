@@ -1,6 +1,6 @@
 ---
 # Установка infrahub-agent на удалённый Linux-хост (systemd).
-# Бинарь копируется с control node (путь в extra-vars infrahub_agent_local_binary).
+# Бинарь скачивается с GitHub Releases: extra-var infrahub_agent_release_base + архитектура из gather_facts.
 - name: Install InfraHub agent
   hosts: all
   become: true
@@ -8,6 +8,8 @@
   vars:
     infrahub_agent_install_path: /usr/local/bin/infrahub-agent
     infrahub_agent_state_dir: /var/lib/infrahub-agent
+    # Меньше шума в логах (интерпретатор на ноде).
+    ansible_python_interpreter: auto_silent
   tasks:
     - name: Ensure state directory exists
       ansible.builtin.file:
@@ -15,12 +17,30 @@
         state: directory
         mode: "0755"
 
-    - name: Copy agent binary from controller
-      ansible.builtin.copy:
-        src: "{{ infrahub_agent_local_binary }}"
+    - name: Map architecture fact to nightly musl asset name
+      ansible.builtin.set_fact:
+        infrahub_agent_download_basename: "{{ {'x86_64': 'infrahub-agent-x86_64-unknown-linux-musl', 'amd64': 'infrahub-agent-x86_64-unknown-linux-musl', 'aarch64': 'infrahub-agent-aarch64-unknown-linux-musl', 'arm64': 'infrahub-agent-aarch64-unknown-linux-musl'}.get(ansible_facts['architecture'], '') }}"
+
+    - name: Fail when no prebuilt binary for this architecture
+      ansible.builtin.fail:
+        msg: >-
+          Архитектура «{{ ansible_facts['architecture'] }}» не совпадает с готовыми nightly-сборками
+          (x86_64 / aarch64, linux musl). Соберите агент из исходников: в релизе GitHub
+          используйте «Source code (zip)» или «Source code (tar.gz)»
+          (https://github.com/Teamofeyy/drun/releases).
+      when: infrahub_agent_download_basename | default('') | length == 0
+
+    - name: Download infrahub-agent from release
+      ansible.builtin.get_url:
+        url: "{{ infrahub_agent_release_base | trim('/') }}/{{ infrahub_agent_download_basename }}"
         dest: "{{ infrahub_agent_install_path }}"
         mode: "0755"
         force: true
+        timeout: 300
+      register: _infrahub_agent_get_url
+      retries: 5
+      delay: 25
+      until: _infrahub_agent_get_url is succeeded
 
     - name: Deploy environment file
       ansible.builtin.template:
