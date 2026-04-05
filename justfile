@@ -12,5 +12,16 @@ dev-kill:
   pkill -f '[c]argo run' || true
   pkill -f '[i]nfrahub-agent' || true
 
+prod:
+  just dev-kill || true
+
+  cd frontend && npm i && npm run dev
+
+  cargo build -p infrahub-backend --release
+  cargo build -p infrahub-agent --release
+
+  ./target/release/infrahub-backend
+  ./target/release/infrahub-agent
+
 stats:
   cloc . --vcs=git --not-match-f='package-lock\.json'

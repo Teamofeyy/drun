@@ -4,6 +4,7 @@ mod agent_worker;
 mod agents_admin;
 mod auth;
 mod metrics;
+mod scenarios;
 mod tasks_http;
 
 use axum::http::StatusCode;
@@ -20,6 +21,7 @@ pub use agent_worker::*;
 pub use agents_admin::*;
 pub use auth::{current_user, health, login, seed_admin};
 pub use metrics::*;
+pub use scenarios::*;
 pub use tasks_http::*;
 
 pub(crate) async fn resolve_agent(state: &AppState, token: &str) -> Result<Uuid, ApiError> {

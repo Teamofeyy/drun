@@ -44,19 +44,59 @@ import { UninstallAgentDialog } from './UninstallAgentDialog'
 
 const nodeColor: Record<string, string> = {
   platform: 'hsl(217 91% 56%)',
-  agent: 'hsl(25 95% 53%)',
+  agent: 'var(--card)',
   site: 'hsl(200 70% 48%)',
   segment: 'hsl(280 55% 58%)',
   probe_target: 'hsl(45 85% 48%)',
 }
 
-type TopologyFlowNode = Node<{ label: string }>
+type TopologyFlowNode = Node<{
+  label: string
+  sub?: string
+  agentStatus?: string
+  hostname?: string
+  primaryIp?: string
+  osLong?: string
+  type: string
+}>
+
+function statusTone(status?: string) {
+  switch (status) {
+    case 'online':
+      return {
+        dot: 'bg-emerald-500',
+        border: 'hsl(145 63% 42%)',
+        glow: '0 0 0 3px rgba(16,185,129,0.12)',
+      }
+    case 'busy':
+      return {
+        dot: 'bg-amber-500',
+        border: 'hsl(38 92% 50%)',
+        glow: '0 0 0 3px rgba(245,158,11,0.14)',
+      }
+    default:
+      return {
+        dot: 'bg-slate-400',
+        border: 'var(--border)',
+        glow: 'none',
+      }
+  }
+}
 
 /**
  * Нужны Handle с классами source/target: иначе @xyflow не считает handleBounds и рёбра не рисуются.
  * Визуально скрываем в topologyFlow.css (.topology-invisible-handle).
  */
 function TopologyPlainNode({ data }: NodeProps<TopologyFlowNode>) {
+  const isPlatform = data.type === 'platform'
+  const tone = statusTone(data.agentStatus)
+  const lines = [
+    data.hostname && data.hostname !== data.label ? data.hostname : undefined,
+    data.primaryIp,
+    data.osLong,
+    data.sub,
+  ].filter(Boolean) as string[]
+
   return (
     <>
       <Handle
@@ -65,7 +105,34 @@ function TopologyPlainNode({ data }: NodeProps<TopologyFlowNode>) {
         isConnectable={false}
         className="topology-invisible-handle"
       />
-      {data.label}
+      <div className="relative text-left">
+        {!isPlatform && data.type === 'agent' && (
+          <span
+            className={cn(
+              'absolute -right-1 -top-1 size-3 rounded-full border border-white shadow-sm',
+              tone.dot,
+            )}
+            title={`agent: ${data.agentStatus ?? 'offline'}`}
+          />
+        )}
+        <div className={cn('font-medium', isPlatform && 'text-center')}>
+          {data.label}
+        </div>
+        {lines.length > 0 && (
+          <div
+            className={cn(
+              'mt-1 space-y-0.5 text-[10px] leading-[1.25] opacity-85',
+              isPlatform && 'text-center',
+            )}
+          >
+            {lines.map((line) => (
+              <div key={line} className="break-words">
+                {line}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
       <Handle
         type="source"
         position={Position.Bottom}
@@ -232,17 +299,24 @@ function toFlowNodes(
 ) {
   return raw.map((n) => {
     const t = n.type
-    const sub = [n.sub, n.site, n.segment, n.role_tag]
+    const sub = [n.site, n.segment, n.role_tag, n.sub]
       .filter(Boolean)
       .filter((x, i, a) => a.indexOf(x) === i)
       .join('\n')
     const p = pos.get(n.id) ?? { x: 0, y: 0 }
     const isPlatform = t === 'platform'
+    const tone = statusTone(n.agent_status)
     return {
       id: n.id,
       position: p,
       data: {
-        label: sub ? `${n.label}\n${sub}` : n.label,
+        label: n.label,
+        sub: sub || undefined,
+        type: t,
+        agentStatus: n.agent_status,
+        hostname: n.hostname,
+        primaryIp: n.primary_ip,
+        osLong: n.os_long,
       },
       style: {
         background: nodeColor[t] ?? 'var(--muted)',
@@ -250,12 +324,12 @@ function toFlowNodes(
         fontSize: isPlatform ? 13 : 11,
         fontWeight: isPlatform ? 700 : 500,
         borderRadius: 10,
-        padding: isPlatform ? 14 : 9,
+        padding: isPlatform ? 14 : 10,
         minWidth: isPlatform ? 160 : 110,
-        maxWidth: 200,
-        border: `2px solid ${isPlatform ? 'hsl(217 91% 40%)' : 'var(--border)'}`,
-        textAlign: 'center' as const,
-        whiteSpace: 'pre-line' as const,
+        maxWidth: t === 'agent' ? 230 : 200,
+        border: `2px solid ${isPlatform ? 'hsl(217 91% 40%)' : t === 'agent' ? tone.border : 'var(--border)'}`,
+        boxShadow: t === 'agent' ? tone.glow : 'none',
+        textAlign: isPlatform ? ('center' as const) : ('left' as const),
         lineHeight: 1.25,
       },
     }
@@ -482,7 +556,7 @@ export function TopologyPanel() {
   const graphQ = useQuery({
     queryKey: qk.topology,
     queryFn: api.topologyGraph,
-    refetchInterval: 45_000,
+    refetchInterval: 15_000,
     select: (raw) => normalizeTopologyGraph(raw as unknown),
   })
 

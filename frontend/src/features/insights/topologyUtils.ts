@@ -10,6 +10,10 @@ function parseNode(raw: unknown): TopologyNode | null {
   const type = typeof raw.type === 'string' ? raw.type : null
   if (!id || !label || !type) return null
   const n: TopologyNode = { id, label, type }
+  if (typeof raw.agent_status === 'string') n.agent_status = raw.agent_status
+  if (typeof raw.hostname === 'string') n.hostname = raw.hostname
+  if (typeof raw.primary_ip === 'string') n.primary_ip = raw.primary_ip
+  if (typeof raw.os_long === 'string') n.os_long = raw.os_long
   if (typeof raw.sub === 'string') n.sub = raw.sub
   if (typeof raw.site === 'string') n.site = raw.site
   if (typeof raw.segment === 'string') n.segment = raw.segment

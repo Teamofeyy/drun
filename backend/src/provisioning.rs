@@ -172,10 +172,7 @@ pub async fn provision_agent(
             let message = if ok {
                 "provision finished".into()
             } else {
-                format!(
-                    "ansible-playbook exited with code {:?}",
-                    out.exit_code
-                )
+                format!("ansible-playbook exited with code {:?}", out.exit_code)
             };
             Ok(Json(ProvisionAgentResponse {
                 ok,
@@ -239,10 +236,7 @@ pub async fn uninstall_agent(
             let mut message = if ok {
                 "uninstall finished".into()
             } else {
-                format!(
-                    "ansible-playbook exited with code {:?}",
-                    out.exit_code
-                )
+                format!("ansible-playbook exited with code {:?}", out.exit_code)
             };
             if ok {
                 if let Some(aid) = ureq.remove_agent_id {
@@ -446,10 +440,7 @@ fn validate_host(host: &str) -> bool {
         if label.is_empty() || label.len() > 63 {
             return false;
         }
-        if !label
-            .chars()
-            .all(|c| c.is_ascii_alphanumeric() || c == '-')
-        {
+        if !label.chars().all(|c| c.is_ascii_alphanumeric() || c == '-') {
             return false;
         }
     }
@@ -520,7 +511,10 @@ fn ansible_playbook_executable() -> PathBuf {
             return canonicalize_if_file(venv_pb);
         }
     }
-    for c in ["/usr/bin/ansible-playbook", "/usr/local/bin/ansible-playbook"] {
+    for c in [
+        "/usr/bin/ansible-playbook",
+        "/usr/local/bin/ansible-playbook",
+    ] {
         if Path::new(c).is_file() {
             return PathBuf::from(c);
         }
@@ -591,8 +585,7 @@ async fn run_ansible_playbook(
         .await
         .map_err(|e| format!("write inventory: {e}"))?;
 
-    let extra_yaml =
-        serde_yaml::to_string(extra_vars).map_err(|e| format!("extra yaml: {e}"))?;
+    let extra_yaml = serde_yaml::to_string(extra_vars).map_err(|e| format!("extra yaml: {e}"))?;
     tokio::fs::write(&extra_path, extra_yaml)
         .await
         .map_err(|e| format!("write extra: {e}"))?;

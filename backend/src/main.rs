@@ -40,6 +40,7 @@ async fn main() -> anyhow::Result<()> {
     let db: sea_orm::DatabaseConnection = pool.into();
 
     handlers::seed_admin(&db, &cfg.admin_username, &cfg.admin_password).await?;
+    handlers::seed_system_scenarios(&db).await?;
 
     let client = redis::Client::open(cfg.redis_url.as_str())?;
     let redis = redis::aio::ConnectionManager::new(client).await?;
@@ -66,6 +67,15 @@ async fn main() -> anyhow::Result<()> {
             post(handlers::agent_fail_task),
         )
         .route("/api/v1/agents", get(handlers::list_agents))
+        .route(
+            "/api/v1/scenarios",
+            get(handlers::list_scenarios).post(handlers::create_scenario),
+        )
+        .route(
+            "/api/v1/scenarios/{id}",
+            get(handlers::get_scenario).patch(handlers::update_scenario),
+        )
+        .route("/api/v1/scenarios/{id}/run", post(handlers::run_scenario))
         .route(
             "/api/v1/agents/{id}/machine-diff",
             get(machine_diff::machine_diff_between_tasks),

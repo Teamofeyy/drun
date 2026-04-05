@@ -6,7 +6,7 @@ import { qk } from '../queryKeys'
 const RECONNECT_MS = 4000
 
 /**
- * SSE: обновляет кэш агентов/задач/метрик. При обрыве — переподключение.
+ * SSE: обновляет кэш агентов/задач/метрик/топологии. При обрыве — переподключение.
  */
 export function useLiveDashboard(enabled: boolean) {
   const qc = useQueryClient()
@@ -24,6 +24,7 @@ export function useLiveDashboard(enabled: boolean) {
       qc.invalidateQueries({ queryKey: qk.agents })
       qc.invalidateQueries({ queryKey: qk.tasks })
       qc.invalidateQueries({ queryKey: qk.metrics })
+      qc.invalidateQueries({ queryKey: qk.topology })
     }
 
     const connect = () => {

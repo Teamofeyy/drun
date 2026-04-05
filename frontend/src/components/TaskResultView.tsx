@@ -58,6 +58,12 @@ export function TaskResultView({ kind, result, taskError }: Props) {
       {kind === 'check_bundle' && isRecord(data) && (
         <BundleView data={data} />
       )}
+      {kind === 'scenario_run' && isRecord(data) && (
+        <ScenarioRunView data={data} />
+      )}
+      {kind === 'file_upload' && isRecord(data) && (
+        <FileUploadView data={data} />
+      )}
 
       {(result.stdout || result.stderr) && (
         <section className="space-y-2">
@@ -516,5 +522,84 @@ function BundleView({ data }: { data: Record<string, unknown> }) {
         </details>
       ))}
     </section>
+  )
+}
+
+function ScenarioRunView({ data }: { data: Record<string, unknown> }) {
+  const scenarioName = String(data.scenario_name ?? 'Scenario')
+  const steps = Array.isArray(data.steps) ? data.steps : []
+
+  return (
+    <section className="space-y-3">
+      <div className="rounded-lg border border-border bg-muted/30 p-4">
+        <strong>{scenarioName}</strong>
+        <p className="mt-1 text-xs text-muted-foreground">
+          Шагов: {steps.length}
+        </p>
+      </div>
+      {steps.map((row, i) => {
+        const step = row as Record<string, unknown>
+        const status = String(step.status ?? 'unknown')
+        return (
+          <details
+            key={String(step.id ?? i)}
+            className="rounded-lg border border-border p-3"
+            open
+          >
+            <summary className="cursor-pointer text-sm font-medium">
+              {String(step.title ?? step.id ?? `step-${i + 1}`)} · {status}
+            </summary>
+            <div className="mt-3 space-y-2">
+              {Boolean(step.summary) && (
+                <p className="text-sm text-muted-foreground">
+                  {String(step.summary)}
+                </p>
+              )}
+              {Boolean(step.stdout) && (
+                <pre className="max-h-48 overflow-auto rounded-lg bg-muted/40 p-3 font-mono text-xs">
+                  {String(step.stdout)}
+                </pre>
+              )}
+              <pre className="max-h-72 overflow-auto rounded-lg bg-muted/20 p-3 font-mono text-xs">
+                {JSON.stringify(step.data ?? step, null, 2)}
+              </pre>
+            </div>
+          </details>
+        )
+      })}
+    </section>
+  )
+}
+
+function FileUploadView({ data }: { data: Record<string, unknown> }) {
+  return (
+    <div className="flex flex-wrap gap-3">
+      <div className={cardClass(true)}>
+        <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+          Путь назначения
+        </span>
+        <strong className="font-mono text-sm break-all">
+          {String(data.destination_path ?? '—')}
+        </strong>
+      </div>
+      <div className={cardClass()}>
+        <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+          Имя файла
+        </span>
+        <strong>{String(data.filename ?? '—')}</strong>
+      </div>
+      <div className={cardClass()}>
+        <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+          Размер
+        </span>
+        <strong>{String(data.bytes_written ?? '—')} bytes</strong>
+      </div>
+      <div className={cardClass()}>
+        <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+          Overwrite
+        </span>
+        <strong>{String(Boolean(data.overwrite))}</strong>
+      </div>
+    </div>
   )
 }

@@ -25,6 +25,8 @@ const ALLOWED_TASK_KINDS: &[&str] = &[
     "diagnostic",
     "network_reachability",
     "check_bundle",
+    "scenario_run",
+    "file_upload",
 ];
 
 pub async fn create_task(
