@@ -9,8 +9,8 @@ use chrono::{Duration, Utc};
 use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
 use serde::Deserialize;
 use serde_json::json;
-use std::collections::HashMap;
 use std::cmp::Ordering;
+use std::collections::HashMap;
 
 use crate::{
     entity::{agents, tasks},
@@ -52,7 +52,10 @@ pub async fn daily_metrics(
         .await
         .map_err(|e| {
             tracing::error!(%e, "daily_metrics");
-            ApiError::new(axum::http::StatusCode::INTERNAL_SERVER_ERROR, "database error")
+            ApiError::new(
+                axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+                "database error",
+            )
         })?;
 
     let agent_names: HashMap<uuid::Uuid, String> = agents::Entity::find()
@@ -60,7 +63,10 @@ pub async fn daily_metrics(
         .await
         .map_err(|e| {
             tracing::error!(%e, "daily_metrics agents");
-            ApiError::new(axum::http::StatusCode::INTERNAL_SERVER_ERROR, "database error")
+            ApiError::new(
+                axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+                "database error",
+            )
         })?
         .into_iter()
         .map(|a| (a.id, a.name))
@@ -77,8 +83,7 @@ pub async fn daily_metrics(
         }
         if t.status == "done" {
             if let (Some(s), Some(c)) = (t.started_at, t.completed_at) {
-                g.durations
-                    .push((c - s).num_milliseconds() as f64 / 1000.0);
+                g.durations.push((c - s).num_milliseconds() as f64 / 1000.0);
             }
         }
     }
@@ -143,7 +148,10 @@ pub async fn agent_ranking(
         .await
         .map_err(|e| {
             tracing::error!(%e, "agent_ranking");
-            ApiError::new(axum::http::StatusCode::INTERNAL_SERVER_ERROR, "database error")
+            ApiError::new(
+                axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+                "database error",
+            )
         })?;
 
     let agent_names: HashMap<uuid::Uuid, String> = agents::Entity::find()
@@ -151,7 +159,10 @@ pub async fn agent_ranking(
         .await
         .map_err(|e| {
             tracing::error!(%e, "agent_ranking agents");
-            ApiError::new(axum::http::StatusCode::INTERNAL_SERVER_ERROR, "database error")
+            ApiError::new(
+                axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+                "database error",
+            )
         })?
         .into_iter()
         .map(|a| (a.id, a.name))
@@ -169,8 +180,7 @@ pub async fn agent_ranking(
         }
         if t.status == "done" {
             if let (Some(s), Some(c)) = (t.started_at, t.completed_at) {
-                g.durations
-                    .push((c - s).num_milliseconds() as f64 / 1000.0);
+                g.durations.push((c - s).num_milliseconds() as f64 / 1000.0);
             }
         }
     }
@@ -208,8 +218,14 @@ pub async fn agent_ranking(
         .collect();
 
     ranked.sort_by(|a, b| {
-        let ca = a.get("combined_score").and_then(|x| x.as_f64()).unwrap_or(0.0);
-        let cb = b.get("combined_score").and_then(|x| x.as_f64()).unwrap_or(0.0);
+        let ca = a
+            .get("combined_score")
+            .and_then(|x| x.as_f64())
+            .unwrap_or(0.0);
+        let cb = b
+            .get("combined_score")
+            .and_then(|x| x.as_f64())
+            .unwrap_or(0.0);
         cb.partial_cmp(&ca).unwrap_or(Ordering::Equal)
     });
 
@@ -232,15 +248,12 @@ pub async fn agent_groups(
         }
     };
 
-    let rows = agents::Entity::find()
-        .all(&state.db)
-        .await
-        .map_err(|_| {
-            ApiError::new(
-                axum::http::StatusCode::INTERNAL_SERVER_ERROR,
-                "database error",
-            )
-        })?;
+    let rows = agents::Entity::find().all(&state.db).await.map_err(|_| {
+        ApiError::new(
+            axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+            "database error",
+        )
+    })?;
 
     let mut by_site: HashMap<String, i64> = HashMap::new();
     let mut by_segment: HashMap<String, i64> = HashMap::new();

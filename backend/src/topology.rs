@@ -9,9 +9,7 @@
 use std::collections::HashSet;
 
 use axum::{extract::State, http::HeaderMap, Json};
-use sea_orm::{
-    ColumnTrait, EntityTrait, QueryFilter, QueryOrder, QuerySelect,
-};
+use sea_orm::{ColumnTrait, EntityTrait, QueryFilter, QueryOrder, QuerySelect};
 use serde_json::{json, Value};
 
 use crate::{
@@ -117,24 +115,23 @@ pub async fn topology_graph(
         }));
     }
 
-    let probe_rows: Vec<(task_results::Model, Option<tasks::Model>)> =
-        task_results::Entity::find()
-            .find_also_related(tasks::Entity)
-            .filter(tasks::Column::Kind.is_in(vec![
-                "port_check".to_string(),
-                "network_reachability".to_string(),
-            ]))
-            .filter(tasks::Column::Status.eq("done"))
-            .order_by_desc(task_results::Column::CreatedAt)
-            .limit(400)
-            .all(&state.db)
-            .await
-            .map_err(|_| {
-                ApiError::new(
-                    axum::http::StatusCode::INTERNAL_SERVER_ERROR,
-                    "database error",
-                )
-            })?;
+    let probe_rows: Vec<(task_results::Model, Option<tasks::Model>)> = task_results::Entity::find()
+        .find_also_related(tasks::Entity)
+        .filter(tasks::Column::Kind.is_in(vec![
+            "port_check".to_string(),
+            "network_reachability".to_string(),
+        ]))
+        .filter(tasks::Column::Status.eq("done"))
+        .order_by_desc(task_results::Column::CreatedAt)
+        .limit(400)
+        .all(&state.db)
+        .await
+        .map_err(|_| {
+            ApiError::new(
+                axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+                "database error",
+            )
+        })?;
 
     for (tr, t_opt) in probe_rows {
         let Some(t) = t_opt else {

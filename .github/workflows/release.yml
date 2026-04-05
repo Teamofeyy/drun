@@ -2,7 +2,7 @@ name: CI and release
 
 on:
   push:
-    branches: [master, main]
+    branches: [master, main, feat/crosscompile]
   pull_request:
   workflow_dispatch:
 
@@ -179,44 +179,6 @@ jobs:
           name: agent-windows-amd64
           path: upload/infrahub-agent-x86_64-pc-windows-msvc.exe
 
-  # --- agent: Windows ARM64 (cross via zig) -------------------------------
-  agent-windows-arm64:
-    needs: lint
-    if: github.event_name != 'pull_request'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: aarch64-pc-windows-msvc
-
-      - uses: goto-bus-stop/setup-zig@v2
-
-      - uses: taiki-e/install-action@v2
-        with:
-          tool: cargo-zigbuild
-
-      - uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: ". -> target"
-
-      - name: Build agent (Windows ARM64)
-        run: |
-          cargo zigbuild --release -p infrahub-agent \
-            --target aarch64-pc-windows-msvc
-
-      - name: Stage binary
-        run: |
-          mkdir -p upload
-          cp target/aarch64-pc-windows-msvc/release/infrahub-agent.exe \
-            upload/infrahub-agent-aarch64-pc-windows-msvc.exe
-
-      - uses: actions/upload-artifact@v4
-        with:
-          name: agent-windows-arm64
-          path: upload/infrahub-agent-aarch64-pc-windows-msvc.exe
-
   # --- agent: .deb (amd64, glibc, typical for Debian/Ubuntu) ------------
   agent-deb:
     needs: lint
@@ -268,7 +230,6 @@ jobs:
       - agent-linux-musl-amd64
       - agent-linux-musl-arm64
       - agent-windows-amd64
-      - agent-windows-arm64
       - agent-deb
     if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest

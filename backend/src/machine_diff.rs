@@ -126,8 +126,14 @@ pub async fn machine_diff_between_tasks(
             )
         })?;
 
-    let d1 = results.iter().find(|r| r.task_id == q.from_task).map(|r| &r.data);
-    let d2 = results.iter().find(|r| r.task_id == q.to_task).map(|r| &r.data);
+    let d1 = results
+        .iter()
+        .find(|r| r.task_id == q.from_task)
+        .map(|r| &r.data);
+    let d2 = results
+        .iter()
+        .find(|r| r.task_id == q.to_task)
+        .map(|r| &r.data);
 
     let (Some(v1), Some(v2)) = (d1, d2) else {
         return Err(ApiError::new(

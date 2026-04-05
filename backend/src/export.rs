@@ -9,9 +9,7 @@ use axum::{
     response::Response,
 };
 use chrono::{DateTime, Utc};
-use sea_orm::{
-    ColumnTrait, EntityTrait, QueryFilter, QueryOrder, QuerySelect,
-};
+use sea_orm::{ColumnTrait, EntityTrait, QueryFilter, QueryOrder, QuerySelect};
 use serde::Deserialize;
 use serde_json::json;
 use uuid::Uuid;
@@ -62,8 +60,7 @@ pub async fn export_tasks(
             ApiError::new(StatusCode::INTERNAL_SERVER_ERROR, "database error")
         })?;
 
-    let agent_ids: std::collections::HashSet<Uuid> =
-        task_rows.iter().map(|t| t.agent_id).collect();
+    let agent_ids: std::collections::HashSet<Uuid> = task_rows.iter().map(|t| t.agent_id).collect();
 
     let agent_list = if agent_ids.is_empty() {
         Vec::new()

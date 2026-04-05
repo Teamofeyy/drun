@@ -8,16 +8,11 @@ mod tasks_http;
 
 use axum::http::StatusCode;
 use chrono::{Duration, Utc};
-use sea_orm::{
-    ActiveModelTrait, ColumnTrait, EntityTrait, IntoActiveModel, QueryFilter, Set,
-};
+use sea_orm::{ActiveModelTrait, ColumnTrait, EntityTrait, IntoActiveModel, QueryFilter, Set};
 use uuid::Uuid;
 
 use crate::{
-    auth::verify_agent_token,
-    entity::agents,
-    error::ApiError,
-    state::AppState,
+    auth::verify_agent_token, entity::agents, error::ApiError, state::AppState,
     token::fingerprint_token,
 };
 
@@ -39,11 +34,17 @@ pub(crate) async fn resolve_agent(state: &AppState, token: &str) -> Result<Uuid,
         })?;
 
     let Some(agent) = row else {
-        return Err(ApiError::new(StatusCode::UNAUTHORIZED, "invalid agent token"));
+        return Err(ApiError::new(
+            StatusCode::UNAUTHORIZED,
+            "invalid agent token",
+        ));
     };
 
     if !verify_agent_token(token, &agent.token_hash) {
-        return Err(ApiError::new(StatusCode::UNAUTHORIZED, "invalid agent token"));
+        return Err(ApiError::new(
+            StatusCode::UNAUTHORIZED,
+            "invalid agent token",
+        ));
     }
     Ok(agent.id)
 }

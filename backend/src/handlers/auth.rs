@@ -31,16 +31,21 @@ pub async fn login(
         .map_err(|_| ApiError::new(StatusCode::INTERNAL_SERVER_ERROR, "database error"))?;
 
     let Some(user) = row else {
-        return Err(ApiError::new(StatusCode::UNAUTHORIZED, "invalid credentials"));
+        return Err(ApiError::new(
+            StatusCode::UNAUTHORIZED,
+            "invalid credentials",
+        ));
     };
 
     if !verify_password(&body.password, &user.password_hash) {
-        return Err(ApiError::new(StatusCode::UNAUTHORIZED, "invalid credentials"));
+        return Err(ApiError::new(
+            StatusCode::UNAUTHORIZED,
+            "invalid credentials",
+        ));
     }
 
-    let token = issue_jwt(&user.id, &user.role, &state.config.jwt_secret, 24).map_err(|_| {
-        ApiError::new(StatusCode::INTERNAL_SERVER_ERROR, "token issue failed")
-    })?;
+    let token = issue_jwt(&user.id, &user.role, &state.config.jwt_secret, 24)
+        .map_err(|_| ApiError::new(StatusCode::INTERNAL_SERVER_ERROR, "token issue failed"))?;
 
     Ok(Json(LoginResponse {
         token,

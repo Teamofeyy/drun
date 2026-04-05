@@ -61,16 +61,16 @@ async fn main() -> anyhow::Result<()> {
             "/api/v1/agent/tasks/{id}/complete",
             post(handlers::agent_complete_task),
         )
-        .route("/api/v1/agent/tasks/{id}/fail", post(handlers::agent_fail_task))
+        .route(
+            "/api/v1/agent/tasks/{id}/fail",
+            post(handlers::agent_fail_task),
+        )
         .route("/api/v1/agents", get(handlers::list_agents))
         .route(
             "/api/v1/agents/{id}/machine-diff",
             get(machine_diff::machine_diff_between_tasks),
         )
-        .route(
-            "/api/v1/agents/{id}",
-            patch(handlers::patch_agent),
-        )
+        .route("/api/v1/agents/{id}", patch(handlers::patch_agent))
         .route(
             "/api/v1/tasks",
             get(handlers::list_tasks).post(handlers::create_task),
@@ -78,23 +78,11 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/v1/tasks/{id}", get(handlers::get_task))
         .route("/api/v1/tasks/{id}/result", get(handlers::get_task_result))
         .route("/api/v1/tasks/{id}/logs", get(handlers::get_task_logs))
-        .route(
-            "/api/v1/stream/dashboard",
-            get(streaming::sse_dashboard),
-        )
+        .route("/api/v1/stream/dashboard", get(streaming::sse_dashboard))
         .route("/api/v1/metrics/summary", get(handlers::metrics_summary))
-        .route(
-            "/api/v1/analytics/daily",
-            get(analytics::daily_metrics),
-        )
-        .route(
-            "/api/v1/analytics/ranking",
-            get(analytics::agent_ranking),
-        )
-        .route(
-            "/api/v1/analytics/groups",
-            get(analytics::agent_groups),
-        )
+        .route("/api/v1/analytics/daily", get(analytics::daily_metrics))
+        .route("/api/v1/analytics/ranking", get(analytics::agent_ranking))
+        .route("/api/v1/analytics/groups", get(analytics::agent_groups))
         .route("/api/v1/topology/graph", get(topology::topology_graph))
         .route("/api/v1/export/tasks", get(export::export_tasks))
         .route(

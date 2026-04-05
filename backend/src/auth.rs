@@ -1,8 +1,8 @@
-use axum::http::StatusCode;
 use argon2::{
     password_hash::{PasswordHash, PasswordHasher, PasswordVerifier, SaltString},
     Argon2,
 };
+use axum::http::StatusCode;
 use jsonwebtoken::{decode, encode, DecodingKey, EncodingKey, Header, Validation};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
@@ -20,7 +20,9 @@ pub struct Claims {
 pub fn hash_password(password: &str) -> Result<String, argon2::password_hash::Error> {
     let salt = SaltString::generate(&mut rand::thread_rng());
     let argon2 = Argon2::default();
-    Ok(argon2.hash_password(password.as_bytes(), &salt)?.to_string())
+    Ok(argon2
+        .hash_password(password.as_bytes(), &salt)?
+        .to_string())
 }
 
 pub fn verify_password(password: &str, hash: &str) -> bool {
