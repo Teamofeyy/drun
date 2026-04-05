@@ -15,7 +15,10 @@ use crate::{
     auth::{enrollment_secrets_equal, hash_agent_token},
     entity::{agents, task_logs, task_results, tasks},
     error::ApiError,
-    models::{CompleteTaskRequest, RegisterAgentRequest, RegisterAgentResponse, TaskRow},
+    models::{
+        normalize_register_cpu_arch, CompleteTaskRequest, RegisterAgentRequest,
+        RegisterAgentResponse, TaskRow,
+    },
     queue,
     session::{bearer, enrollment_secret_from_headers},
     state::AppState,
@@ -168,13 +171,9 @@ pub async fn register_agent(
     headers: HeaderMap,
     Json(body): Json<RegisterAgentRequest>,
 ) -> Result<Json<RegisterAgentResponse>, ApiError> {
-    let provided = enrollment_secret_from_headers(&headers).ok_or_else(|| {
-        ApiError::new(StatusCode::UNAUTHORIZED, "unauthorized")
-    })?;
-    if !enrollment_secrets_equal(
-        &provided,
-        state.config.agent_enrollment_secret.as_str(),
-    ) {
+    let provided = enrollment_secret_from_headers(&headers)
+        .ok_or_else(|| ApiError::new(StatusCode::UNAUTHORIZED, "unauthorized"))?;
+    if !enrollment_secrets_equal(&provided, state.config.agent_enrollment_secret.as_str()) {
         return Err(ApiError::new(StatusCode::UNAUTHORIZED, "unauthorized"));
     }
 
@@ -188,12 +187,14 @@ pub async fn register_agent(
         .map_err(|_| ApiError::new(StatusCode::INTERNAL_SERVER_ERROR, "hash failed"))?;
 
     let id = Uuid::new_v4();
+    let cpu_arch = normalize_register_cpu_arch(body.cpu_arch.as_deref());
     agents::ActiveModel {
         id: Set(id),
         name: Set(body.name),
         token_fingerprint: Set(fp),
         token_hash: Set(th),
         status: Set("offline".to_string()),
+        cpu_arch: Set(cpu_arch),
         ..Default::default()
     }
     .insert(&state.db)

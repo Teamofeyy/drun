@@ -124,7 +124,6 @@ export function Dashboard() {
         ? 'Ошибка загрузки'
         : null
 
-  const m = metricsQ.data
   const createErr =
     createTask.error instanceof Error
       ? createTask.error.message
@@ -179,7 +178,7 @@ export function Dashboard() {
             </p>
           )}
 
-          {m && <MetricsSection metrics={m} />}
+          <MetricsSection metrics={metricsQ.data ?? null} isLoading={metricsQ.isLoading} />
 
           <AgentsTableCard
             agents={agents}

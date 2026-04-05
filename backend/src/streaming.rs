@@ -142,7 +142,8 @@ async fn snapshot_payload(
             return json!({
                 "ts": Utc::now(),
                 "agents": agents.iter().map(|a| json!({
-                    "id": a.id, "name": a.name, "status": a.status, "last_seen_at": a.last_seen_at
+                    "id": a.id, "name": a.name, "status": a.status, "last_seen_at": a.last_seen_at,
+                    "cpu_arch": a.cpu_arch
                 })).collect::<Vec<_>>(),
                 "tasks": [],
             })
@@ -152,7 +153,8 @@ async fn snapshot_payload(
     json!({
         "ts": Utc::now(),
         "agents": agents.iter().map(|a| json!({
-            "id": a.id, "name": a.name, "status": a.status, "last_seen_at": a.last_seen_at
+            "id": a.id, "name": a.name, "status": a.status, "last_seen_at": a.last_seen_at,
+            "cpu_arch": a.cpu_arch
         })).collect::<Vec<_>>(),
         "tasks": tasks.iter().map(|t| json!({
             "id": t.id, "kind": t.kind, "status": t.status, "agent_id": t.agent_id, "created_at": t.created_at

@@ -6,12 +6,14 @@ use axum::{
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, EntityTrait, QueryFilter, QueryOrder, QuerySelect, Set,
 };
+use serde_json::json;
 use uuid::Uuid;
 
 use crate::{
     entity::{agents, tasks},
     error::ApiError,
     models::CreateTaskRequest,
+    models::RunScriptRequest,
     models::TaskRow,
     queue,
     roles::UserRole,
@@ -27,7 +29,13 @@ const ALLOWED_TASK_KINDS: &[&str] = &[
     "check_bundle",
     "scenario_run",
     "file_upload",
+    "shell_script",
 ];
+
+/// Максимальный размер тела скрипта в задаче `shell_script` (байты UTF-8).
+const MAX_SHELL_SCRIPT_BYTES: usize = 256 * 1024;
+const DEFAULT_SHELL_TIMEOUT_SECS: u64 = 300;
+const MAX_SHELL_TIMEOUT_SECS: u64 = 3600;
 
 pub async fn create_task(
     State(state): State<AppState>,
@@ -87,6 +95,84 @@ pub async fn create_task(
     state.notify_dashboard();
     if let Err(e) = super::try_push_next_task_ws(&state, body.agent_id).await {
         tracing::warn!(error = %e, "ws push after create_task");
+    }
+
+    Ok(Json(task.into()))
+}
+
+pub async fn run_script_task(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(body): Json<RunScriptRequest>,
+) -> Result<Json<TaskRow>, ApiError> {
+    let (_, role) = resolve_session(&state, &headers).await?;
+    role.require(UserRole::Operator)?;
+
+    let script = body.script.trim().to_string();
+    if script.is_empty() {
+        return Err(ApiError::new(
+            StatusCode::BAD_REQUEST,
+            "script must not be empty",
+        ));
+    }
+    if script.len() > MAX_SHELL_SCRIPT_BYTES {
+        return Err(ApiError::new(
+            StatusCode::BAD_REQUEST,
+            "script exceeds maximum size",
+        ));
+    }
+
+    let timeout_secs = body
+        .timeout_secs
+        .unwrap_or(DEFAULT_SHELL_TIMEOUT_SECS)
+        .clamp(1, MAX_SHELL_TIMEOUT_SECS);
+
+    let exists = agents::Entity::find_by_id(body.agent_id)
+        .one(&state.db)
+        .await
+        .map_err(|_| ApiError::new(StatusCode::INTERNAL_SERVER_ERROR, "database error"))?
+        .is_some();
+
+    if !exists {
+        return Err(ApiError::new(StatusCode::BAD_REQUEST, "unknown agent"));
+    }
+
+    let id = Uuid::new_v4();
+    let payload = json!({
+        "script": script,
+        "timeout_secs": timeout_secs,
+    });
+
+    tasks::ActiveModel {
+        id: Set(id),
+        agent_id: Set(body.agent_id),
+        kind: Set("shell_script".to_string()),
+        payload: Set(payload),
+        status: Set("pending".to_string()),
+        max_retries: Set(0),
+        ..Default::default()
+    }
+    .insert(&state.db)
+    .await
+    .map_err(|_| ApiError::new(StatusCode::INTERNAL_SERVER_ERROR, "database error"))?;
+
+    let mut redis = state.redis.clone();
+    queue::enqueue(&mut redis, body.agent_id, id)
+        .await
+        .map_err(|e| {
+            tracing::error!(%e, "redis enqueue shell_script");
+            ApiError::new(StatusCode::INTERNAL_SERVER_ERROR, "queue error")
+        })?;
+
+    let task = tasks::Entity::find_by_id(id)
+        .one(&state.db)
+        .await
+        .map_err(|_| ApiError::new(StatusCode::INTERNAL_SERVER_ERROR, "database error"))?
+        .ok_or_else(|| ApiError::new(StatusCode::INTERNAL_SERVER_ERROR, "task row missing"))?;
+
+    state.notify_dashboard();
+    if let Err(e) = super::try_push_next_task_ws(&state, body.agent_id).await {
+        tracing::warn!(error = %e, "ws push after run_script_task");
     }
 
     Ok(Json(task.into()))

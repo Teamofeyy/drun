@@ -2,10 +2,10 @@ use argon2::{
     password_hash::{PasswordHash, PasswordHasher, PasswordVerifier, SaltString},
     Argon2,
 };
-use subtle::ConstantTimeEq;
 use axum::http::StatusCode;
 use jsonwebtoken::{decode, encode, DecodingKey, EncodingKey, Header, Validation};
 use serde::{Deserialize, Serialize};
+use subtle::ConstantTimeEq;
 use uuid::Uuid;
 
 use crate::error::ApiError;

@@ -18,6 +18,7 @@ type SnapshotAgent = {
   name?: unknown
   status?: unknown
   last_seen_at?: unknown
+  cpu_arch?: unknown
 }
 
 type SnapshotTasks = {
@@ -69,6 +70,15 @@ function patchAgentsFromSnapshot(qc: QueryClient, raw: string): boolean {
           last_seen_at = ex?.last_seen_at ?? null
         }
 
+        let cpu_arch: string | null
+        if (row.cpu_arch === null || row.cpu_arch === undefined) {
+          cpu_arch = ex?.cpu_arch ?? null
+        } else if (typeof row.cpu_arch === 'string') {
+          cpu_arch = row.cpu_arch
+        } else {
+          cpu_arch = ex?.cpu_arch ?? null
+        }
+
         byId.set(id, {
           id,
           name,
@@ -78,6 +88,7 @@ function patchAgentsFromSnapshot(qc: QueryClient, raw: string): boolean {
           site: ex?.site ?? '',
           segment: ex?.segment ?? '',
           role_tag: ex?.role_tag ?? '',
+          cpu_arch,
         })
       }
 

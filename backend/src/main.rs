@@ -51,11 +51,7 @@ async fn main() -> anyhow::Result<()> {
     let (dashboard_tx, _) = broadcast::channel::<()>(256);
     let dashboard_wake = Arc::new(tokio::sync::Notify::new());
     let debounce = Duration::from_millis(cfg.dashboard_notify_debounce_ms);
-    state::spawn_dashboard_fanout_task(
-        dashboard_tx.clone(),
-        Arc::clone(&dashboard_wake),
-        debounce,
-    );
+    state::spawn_dashboard_fanout_task(dashboard_tx.clone(), Arc::clone(&dashboard_wake), debounce);
     let state = state::AppState::new(
         db,
         redis,
@@ -88,7 +84,9 @@ async fn main() -> anyhow::Result<()> {
         )
         .route(
             "/api/v1/scenarios/{id}",
-            get(handlers::get_scenario).patch(handlers::update_scenario),
+            get(handlers::get_scenario)
+                .patch(handlers::update_scenario)
+                .delete(handlers::delete_scenario),
         )
         .route("/api/v1/scenarios/{id}/run", post(handlers::run_scenario))
         .route(
@@ -100,6 +98,7 @@ async fn main() -> anyhow::Result<()> {
             "/api/v1/tasks",
             get(handlers::list_tasks).post(handlers::create_task),
         )
+        .route("/api/v1/tasks/run-script", post(handlers::run_script_task))
         .route("/api/v1/tasks/{id}", get(handlers::get_task))
         .route("/api/v1/tasks/{id}/result", get(handlers::get_task_result))
         .route("/api/v1/tasks/{id}/logs", get(handlers::get_task_logs))

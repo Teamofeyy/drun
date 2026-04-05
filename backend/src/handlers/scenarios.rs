@@ -267,6 +267,36 @@ pub async fn update_scenario(
     Ok(Json(updated.into()))
 }
 
+pub async fn delete_scenario(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(id): Path<Uuid>,
+) -> Result<StatusCode, ApiError> {
+    let (_, role) = resolve_session(&state, &headers).await?;
+    role.require(UserRole::Operator)?;
+
+    let row = scenarios::Entity::find_by_id(id)
+        .one(&state.db)
+        .await
+        .map_err(|_| ApiError::new(StatusCode::INTERNAL_SERVER_ERROR, "database error"))?
+        .ok_or_else(|| ApiError::new(StatusCode::NOT_FOUND, "scenario not found"))?;
+
+    if row.is_preset {
+        return Err(ApiError::new(
+            StatusCode::FORBIDDEN,
+            "preset scenarios cannot be deleted",
+        ));
+    }
+
+    scenarios::Entity::delete_many()
+        .filter(scenarios::Column::Id.eq(id))
+        .exec(&state.db)
+        .await
+        .map_err(|_| ApiError::new(StatusCode::INTERNAL_SERVER_ERROR, "database error"))?;
+
+    Ok(StatusCode::NO_CONTENT)
+}
+
 pub async fn run_scenario(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -397,6 +427,68 @@ pub async fn seed_system_scenarios(db: &sea_orm::DatabaseConnection) -> anyhow::
                 },
                 "steps": [
                     { "id": "ports", "type": "port_check", "title": "TCP-проверка", "params": { "targets": "{{inputs.targets}}" } }
+                ]
+            }),
+        ),
+        (
+            "agent-self-upgrade",
+            "Обновление агента с релиза",
+            "Снимок system_info, скачивание musl-бинаря с URL релиза (как Ansible), перезапуск systemd.",
+            vec!["agent".to_string(), "upgrade".to_string(), "system".to_string()],
+            json!({
+                "inputs": {
+                    "release_base": ""
+                },
+                "steps": [
+                    { "id": "before", "type": "system_info", "title": "Снимок до обновления" },
+                    {
+                        "id": "upgrade",
+                        "type": "agent_self_update",
+                        "title": "Скачать и установить бинарь",
+                        "params": { "release_base": "{{inputs.release_base}}" }
+                    },
+                    { "id": "after", "type": "system_info", "title": "Снимок после обновления" }
+                ]
+            }),
+        ),
+        (
+            "bulk-file-delivery",
+            "Доставка файла (снимок до/после)",
+            "Системный шаблон: снимок пути, запись файла без shell, повторный снимок. Результат одной задачи сценария хранит состояние до и после.",
+            vec!["delivery".to_string(), "file".to_string(), "bulk".to_string()],
+            json!({
+                "inputs": {
+                    "destination_path": { "type": "string", "description": "Путь на агенте" },
+                    "content_base64": { "type": "string", "description": "Содержимое файла (base64)" },
+                    "filename": { "type": "string", "description": "Имя файла (опционально)" },
+                    "overwrite": { "type": "boolean", "default": true },
+                    "create_parents": { "type": "boolean", "default": true }
+                },
+                "steps": [
+                    {
+                        "id": "pre",
+                        "type": "path_snapshot",
+                        "title": "Снимок пути (до)",
+                        "params": { "path": "{{inputs.destination_path}}" }
+                    },
+                    {
+                        "id": "upload",
+                        "type": "file_upload",
+                        "title": "Запись файла",
+                        "params": {
+                            "destination_path": "{{inputs.destination_path}}",
+                            "content_base64": "{{inputs.content_base64}}",
+                            "filename": "{{inputs.filename}}",
+                            "overwrite": "{{inputs.overwrite}}",
+                            "create_parents": "{{inputs.create_parents}}"
+                        }
+                    },
+                    {
+                        "id": "post",
+                        "type": "path_snapshot",
+                        "title": "Снимок пути (после)",
+                        "params": { "path": "{{inputs.destination_path}}" }
+                    }
                 ]
             }),
         ),

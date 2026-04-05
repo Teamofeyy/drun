@@ -4,7 +4,10 @@ const ROLE_KEY = 'infrahub_role'
 export type UserRole = 'admin' | 'operator' | 'observer'
 
 export function getToken(): string | null {
-  return localStorage.getItem(TOKEN_KEY)
+  const raw = localStorage.getItem(TOKEN_KEY)
+  if (raw == null) return null
+  const t = raw.trim()
+  return t.length > 0 ? t : null
 }
 
 export function setToken(t: string) {
@@ -218,6 +221,9 @@ export const api = {
       body: JSON.stringify(body),
     }) as Promise<Scenario>
   },
+  deleteScenario(id: string) {
+    return apiFetch(`/api/v1/scenarios/${id}`, { method: 'DELETE' }) as Promise<null>
+  },
   patchAgent(
     id: string,
     body: { site?: string; segment?: string; role_tag?: string },
@@ -244,6 +250,15 @@ export const api = {
         payload,
         ...(max_retries !== undefined ? { max_retries } : {}),
       }),
+    }) as Promise<Task>
+  },
+  runScriptTask(
+    agent_id: string,
+    body: { script: string; timeout_secs?: number },
+  ) {
+    return apiFetch('/api/v1/tasks/run-script', {
+      method: 'POST',
+      body: JSON.stringify({ agent_id, ...body }),
     }) as Promise<Task>
   },
   metricsSummary() {
@@ -310,6 +325,8 @@ export type Agent = {
   site: string
   segment: string
   role_tag: string
+  /** Архитектура с регистрации (Ansible / INFRAHUB_AGENT_CPU_ARCH), может быть null у старых агентов */
+  cpu_arch: string | null
 }
 
 export type Scenario = {

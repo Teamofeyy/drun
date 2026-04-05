@@ -185,10 +185,6 @@ export function ProvisionAgentDialog({ open, onOpenChange }: Props) {
               placeholder="https://infrahub.example.com"
               autoComplete="off"
             />
-            <p className="text-xs text-muted-foreground">
-              Подставляется автоматически (порт <strong>8080</strong>, не Vite).
-              Для удалённой ноды замените на адрес API, доступный <em>с той машины</em>.
-            </p>
           </div>
           <div className="space-y-2 rounded-md border border-border bg-muted/30 px-3 py-2">
             <p className="text-sm font-medium">Каталог URL релиза агента (GitHub)</p>
@@ -203,12 +199,6 @@ export function ProvisionAgentDialog({ open, onOpenChange }: Props) {
                 {releaseDefaults.data?.infrahub_agent_release_base}
               </code>
             )}
-            <p className="text-xs text-muted-foreground">
-              Задаётся на сервере InfraHub (
-              <code className="rounded bg-muted px-1">INFRAHUB_AGENT_RELEASE_BASE</code>
-              ). Ansible собирает URL бинаря по{' '}
-              <code className="rounded bg-muted px-1">ansible_architecture</code>.
-            </p>
           </div>
           <fieldset className="space-y-3 rounded-md border border-border p-3">
             <legend className="px-1 text-sm font-medium">Аутентификация SSH</legend>

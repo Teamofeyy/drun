@@ -32,3 +32,12 @@ export function taskStatusLabel(s: string): string {
   }
   return map[s] ?? s
 }
+
+export function agentStatusLabel(s: string): string {
+  const map: Record<string, string> = {
+    online: 'Онлайн',
+    busy: 'Занят',
+    offline: 'Оффлайн',
+  }
+  return map[s] ?? s
+}

@@ -54,6 +54,10 @@
   border-radius: var(--radius-sm);
 }
 
+.topology-flow-shell .react-flow__panel {
+  margin: 0;
+}
+
 /* Подстраховка подписей, если инлайн-стили когда-либо снова станут невалидными */
 .topology-flow-shell .react-flow__edge-text {
   fill: var(--muted-foreground);

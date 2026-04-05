@@ -51,6 +51,8 @@ async fn main() -> anyhow::Result<()> {
         )
         .init();
 
+    tracing::info!(version = env!("CARGO_PKG_VERSION"), "infrahub-agent");
+
     let cli = Cli::parse();
     let path = state_file::state_path(cli.data_dir.as_deref());
     let server_n = normalize_server(&cli.server);
@@ -123,7 +125,11 @@ async fn register_and_save(
     name: &str,
     enrollment_secret: &str,
 ) -> anyhow::Result<(AgentState, bool)> {
-    let res = client::register(server, name, enrollment_secret).await?;
+    let cpu_arch = std::env::var("INFRAHUB_AGENT_CPU_ARCH")
+        .ok()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty());
+    let res = client::register(server, name, enrollment_secret, cpu_arch.as_deref()).await?;
     let state = AgentState {
         server: server.to_string(),
         agent_id: res.agent_id,

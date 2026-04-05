@@ -3,7 +3,7 @@ import { TopologyPanel } from '@/features/insights/TopologyPanel'
 
 export function TopologyPage() {
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex flex-col gap-6">
       <TopologyPanel />
       <MachineDiffPanel />
     </div>

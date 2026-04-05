@@ -1,6 +1,6 @@
 import { useMutation } from '@tanstack/react-query'
 import { useState, type FormEvent } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { Navigate, useNavigate } from 'react-router-dom'
 import { AppShell } from '@/components/layout/AppShell'
 import { Button } from '@/components/ui/button'
 import {
@@ -13,7 +13,7 @@ import {
 } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { api, setRole, setToken } from './api'
+import { api, getToken, setRole, setToken } from './api'
 
 export function Login() {
   const nav = useNavigate()
@@ -28,6 +28,10 @@ export function Login() {
       nav('/app')
     },
   })
+
+  if (getToken()) {
+    return <Navigate to="/app" replace />
+  }
 
   function onSubmit(e: FormEvent) {
     e.preventDefault()

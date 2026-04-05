@@ -17,6 +17,9 @@ import { qk } from './queryKeys'
 import { formatDateTime, taskStatusLabel } from './utils/format'
 import { cn } from '@/lib/utils'
 
+/** Пока задача не завершена — опрос REST (SSE может не включать эту задачу в снимок). */
+const TASK_ACTIVE_POLL_MS = 2500
+
 function statusBadgeVariant(status: string) {
   switch (status) {
     case 'done':
@@ -39,6 +42,12 @@ export function TaskDetail() {
     queryKey: qk.task(id ?? ''),
     queryFn: () => api.task(id!),
     enabled: !!id,
+    staleTime: 0,
+    refetchInterval: (q) => {
+      const st = q.state.data?.status
+      if (st === 'pending' || st === 'running') return TASK_ACTIVE_POLL_MS
+      return false
+    },
   })
 
   const task = taskQ.data
@@ -97,7 +106,12 @@ export function TaskDetail() {
                       {(task.status === 'pending' ||
                         task.status === 'running') && (
                         <span className="text-xs text-emerald-400">
-                          ● обновление каждые 2,5 с
+                          ● обновление каждые{' '}
+                          {(TASK_ACTIVE_POLL_MS / 1000).toLocaleString('ru-RU', {
+                            minimumFractionDigits: 0,
+                            maximumFractionDigits: 1,
+                          })}{' '}
+                          с
                         </span>
                       )}
                     </dd>

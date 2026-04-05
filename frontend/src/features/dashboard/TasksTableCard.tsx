@@ -37,21 +37,18 @@ function statusBadgeClass(status: string) {
 export function TasksTableCard({
   tasks,
   loading,
+  embedded = false,
 }: {
   tasks: Task[]
   loading: boolean
+  /** Без обёртки Card — когда заголовок снаружи */
+  embedded?: boolean
 }) {
-  return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="text-lg">Задачи</CardTitle>
-        <CardDescription>История и статусы постановки в очередь.</CardDescription>
-      </CardHeader>
-      <CardContent>
-        {loading ? (
-          <p className="text-sm text-muted-foreground">Загрузка…</p>
-        ) : (
-          <Table>
+  const tableSection =
+    loading ? (
+      <p className="text-sm text-muted-foreground">Загрузка…</p>
+    ) : (
+      <Table>
             <TableHeader>
               <TableRow>
                 <TableHead>Создана</TableHead>
@@ -96,8 +93,19 @@ export function TasksTableCard({
               ))}
             </TableBody>
           </Table>
-        )}
-      </CardContent>
+    )
+
+  if (embedded) {
+    return <div className="space-y-3">{tableSection}</div>
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-lg">Задачи</CardTitle>
+        <CardDescription>История и статусы постановки в очередь.</CardDescription>
+      </CardHeader>
+      <CardContent>{tableSection}</CardContent>
     </Card>
   )
 }

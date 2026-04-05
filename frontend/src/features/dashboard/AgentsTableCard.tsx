@@ -125,6 +125,7 @@ export function AgentsTableCard({
                   <TableHead className="hidden lg:table-cell">Площадка</TableHead>
                   <TableHead className="hidden lg:table-cell">Сегмент</TableHead>
                   <TableHead className="hidden md:table-cell">Роль узла</TableHead>
+                  <TableHead className="hidden lg:table-cell">Арх.</TableHead>
                   <TableHead>Активность</TableHead>
                   <TableHead className="hidden xl:table-cell">ID</TableHead>
                   {canEditMeta && <TableHead className="w-[100px]" />}
@@ -155,6 +156,9 @@ export function AgentsTableCard({
                     </TableCell>
                     <TableCell className="hidden max-w-[100px] truncate text-muted-foreground md:table-cell">
                       {dash(a.role_tag)}
+                    </TableCell>
+                    <TableCell className="hidden max-w-[90px] truncate font-mono text-xs text-muted-foreground lg:table-cell">
+                      {dash(a.cpu_arch ?? '')}
                     </TableCell>
                     <TableCell className="text-muted-foreground">
                       {a.last_seen_at ? (

@@ -60,9 +60,11 @@ export function MachineDiffPanel() {
   })
 
   return (
-    <Card>
+    <Card className="border-border/70 shadow-sm">
       <CardHeader>
-        <CardTitle className="text-lg">История изменений узла</CardTitle>
+        <CardTitle className="text-xl font-semibold tracking-tight">
+          История изменений узла
+        </CardTitle>
         <CardDescription>
           Сравнение двух завершённых задач <code className="text-xs">system_info</code> по
           плоскому JSON: что поменялось между запусками.

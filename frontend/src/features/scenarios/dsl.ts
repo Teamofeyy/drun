@@ -8,6 +8,9 @@ export const SCENARIO_STEP_TYPES = [
   'port_check',
   'network_reachability',
   'check_bundle',
+  'agent_self_update',
+  'path_snapshot',
+  'file_upload',
 ] as const
 
 export type ScenarioStepType = (typeof SCENARIO_STEP_TYPES)[number]
@@ -34,6 +37,9 @@ export const STEP_LABELS: Record<ScenarioStepType, string> = {
   port_check: 'Port Check',
   network_reachability: 'Reachability',
   check_bundle: 'Bundle Template',
+  agent_self_update: 'Обновление агента (релиз)',
+  path_snapshot: 'Снимок пути',
+  file_upload: 'Доставка файла',
 }
 
 export function defaultParamsForType(type: ScenarioStepType): Record<string, unknown> {
@@ -48,6 +54,18 @@ export function defaultParamsForType(type: ScenarioStepType): Record<string, unk
       return { targets: ['1.1.1.1:443'], timeout_secs: 5 }
     case 'check_bundle':
       return { template: 'node_baseline' }
+    case 'agent_self_update':
+      return { release_base: '' }
+    case 'path_snapshot':
+      return { path: '{{inputs.destination_path}}' }
+    case 'file_upload':
+      return {
+        destination_path: '{{inputs.destination_path}}',
+        content_base64: '{{inputs.content_base64}}',
+        filename: '{{inputs.filename}}',
+        overwrite: '{{inputs.overwrite}}',
+        create_parents: '{{inputs.create_parents}}',
+      }
     default:
       return {}
   }

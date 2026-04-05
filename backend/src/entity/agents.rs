@@ -15,6 +15,7 @@ pub struct Model {
     pub site: String,
     pub segment: String,
     pub role_tag: String,
+    pub cpu_arch: Option<String>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

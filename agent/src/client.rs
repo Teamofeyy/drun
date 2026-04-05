@@ -29,14 +29,19 @@ pub async fn register(
     server: &str,
     name: &str,
     enrollment_secret: &str,
+    cpu_arch: Option<&str>,
 ) -> anyhow::Result<RegisterResponse> {
     let base = server.trim_end_matches('/');
     let url = format!("{}/api/v1/agent/register", base);
     let client = reqwest::Client::new();
+    let body = match cpu_arch.map(str::trim).filter(|s| !s.is_empty()) {
+        Some(arch) => json!({ "name": name, "cpu_arch": arch }),
+        None => json!({ "name": name }),
+    };
     let res = client
         .post(&url)
         .header("X-Infrahub-Enrollment", enrollment_secret)
-        .json(&json!({ "name": name }))
+        .json(&body)
         .send()
         .await?
         .error_for_status()?;
@@ -189,10 +194,7 @@ async fn handle_server_text(
     text: &str,
 ) -> anyhow::Result<()> {
     let v: Value = serde_json::from_str(text)?;
-    let kind = v
-        .get("kind")
-        .and_then(|x| x.as_str())
-        .unwrap_or("");
+    let kind = v.get("kind").and_then(|x| x.as_str()).unwrap_or("");
     if kind != "task" {
         return Ok(());
     }
@@ -221,7 +223,7 @@ async fn handle_server_text(
 
 async fn run_one_task(client: &reqwest::Client, base: &str, token: &str, task: TaskDto) {
     tracing::info!(task_id = %task.id, kind = %task.kind, "running task");
-    match checks::run(&task.kind, &task.payload).await {
+    match checks::run(task.kind.trim(), &task.payload).await {
         Ok(out) => {
             let logs: Vec<Value> = out
                 .logs

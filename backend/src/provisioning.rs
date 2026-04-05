@@ -14,11 +14,7 @@ use tokio::process::Command;
 use uuid::Uuid;
 
 use crate::{
-    entity::agents,
-    error::ApiError,
-    roles::UserRole,
-    session::resolve_session,
-    state::AppState,
+    entity::agents, error::ApiError, roles::UserRole, session::resolve_session, state::AppState,
 };
 
 /// Максимум текста stdout/stderr в JSON-ответе
@@ -86,10 +82,7 @@ pub async fn provision_agent_defaults(
     let (_, role) = resolve_session(&state, &headers).await?;
     role.require(UserRole::Operator)?;
     Ok(Json(ProvisionAgentDefaultsResponse {
-        infrahub_agent_release_base: state
-            .config
-            .default_infrahub_agent_release_base
-            .clone(),
+        infrahub_agent_release_base: state.config.default_infrahub_agent_release_base.clone(),
     }))
 }
 
@@ -252,10 +245,7 @@ pub async fn uninstall_agent(
             };
             if ok {
                 if let Some(aid) = ureq.remove_agent_id {
-                    match agents::Entity::delete_by_id(aid)
-                        .exec(&state.db)
-                        .await
-                    {
+                    match agents::Entity::delete_by_id(aid).exec(&state.db).await {
                         Ok(del) if del.rows_affected > 0 => {
                             message = "uninstall finished; agent removed from InfraHub".into();
                         }
@@ -264,8 +254,7 @@ pub async fn uninstall_agent(
                         }
                         Err(e) => {
                             tracing::error!(error = %e, %aid, "remove_agent_id: db delete failed");
-                            message =
-                                "uninstall finished but failed to remove agent record".into();
+                            message = "uninstall finished but failed to remove agent record".into();
                         }
                     }
                 }
@@ -423,7 +412,9 @@ fn validate_provision_request(
     })
 }
 
-fn validate_uninstall_request(body: UninstallAgentRequest) -> Result<ValidatedUninstallRequest, ApiError> {
+fn validate_uninstall_request(
+    body: UninstallAgentRequest,
+) -> Result<ValidatedUninstallRequest, ApiError> {
     let ssh = validate_ssh_target(
         body.host,
         body.ssh_user,
@@ -547,8 +538,8 @@ async fn run_ansible_playbook(
     let key_path = tmp_path.join("ssh_key.pem");
     let known_hosts_path = tmp_path.join("_ansible_known_hosts");
     std::fs::write(&known_hosts_path, b"").map_err(|e| format!("known_hosts file: {e}"))?;
-    let known_hosts_abs = std::fs::canonicalize(&known_hosts_path)
-        .unwrap_or_else(|_| known_hosts_path.clone());
+    let known_hosts_abs =
+        std::fs::canonicalize(&known_hosts_path).unwrap_or_else(|_| known_hosts_path.clone());
     let kh = known_hosts_abs.to_string_lossy();
     // По паролю Ansible (часто paramiko) падает, пока host_key_checking включён; accept-new мало помогает.
     let ssh_common = if ssh.ssh_password.is_some() {

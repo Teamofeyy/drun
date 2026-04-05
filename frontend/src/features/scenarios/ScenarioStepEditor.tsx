@@ -34,6 +34,8 @@ type Props = {
   readOnly?: boolean
   parseError?: string | null
   onChange: (definition: ScenarioDefinition) => void
+  /** Без обёртки Card — для вкладок и вложенных экранов */
+  embedded?: boolean
 }
 
 function replaceStep(
@@ -51,6 +53,7 @@ export function ScenarioStepEditor({
   readOnly = false,
   parseError,
   onChange,
+  embedded = false,
 }: Props) {
   const [newType, setNewType] = useState<ScenarioStepType>('system_info')
 
@@ -66,19 +69,27 @@ export function ScenarioStepEditor({
   }, [steps])
 
   if (!definition) {
+    const errBody = (
+      <p className="text-sm text-amber-800 dark:text-amber-200">
+        {parseError ?? 'Сначала исправьте JSON определения на вкладке «JSON».'}
+      </p>
+    )
+    if (embedded) {
+      return (
+        <div className="rounded-xl border border-amber-500/40 bg-amber-500/5 px-4 py-3">
+          {errBody}
+        </div>
+      )
+    }
     return (
       <Card className="border-amber-300/60">
         <CardHeader>
-          <CardTitle className="text-lg">Step Editor</CardTitle>
+          <CardTitle className="text-lg">Редактор шагов</CardTitle>
           <CardDescription>
             Визуальный редактор доступен после валидного JSON definition.
           </CardDescription>
         </CardHeader>
-        <CardContent>
-          <p className="text-sm text-amber-700">
-            {parseError ?? 'Definition JSON ещё не распознан.'}
-          </p>
-        </CardContent>
+        <CardContent>{errBody}</CardContent>
       </Card>
     )
   }
@@ -106,15 +117,8 @@ export function ScenarioStepEditor({
     updateSteps(next)
   }
 
-  return (
-    <Card className="border-border/70">
-      <CardHeader>
-        <CardTitle className="text-lg">Step Editor</CardTitle>
-        <CardDescription>
-          Визуальная сборка сценария из разрешённых шагов. JSON definition синхронизируется автоматически.
-        </CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-4">
+  const body = (
+    <div className="space-y-4">
         <div className="rounded-xl border border-border/70 bg-muted/20 px-4 py-3 text-sm text-muted-foreground">
           <strong className="text-foreground">Шагов:</strong> {steps.length}
           {summary ? <span> · {summary}</span> : null}
@@ -266,13 +270,28 @@ export function ScenarioStepEditor({
 
         <details className="rounded-xl border border-border/70 bg-muted/10 p-4">
           <summary className="cursor-pointer text-sm font-medium">
-            Preview definition JSON
+            Предпросмотр definition JSON
           </summary>
           <pre className="mt-3 max-h-80 overflow-auto rounded-lg bg-muted/30 p-4 font-mono text-xs">
             {stringifyScenarioDefinition(definition)}
           </pre>
         </details>
-      </CardContent>
+    </div>
+  )
+
+  if (embedded) {
+    return body
+  }
+
+  return (
+    <Card className="border-border/70">
+      <CardHeader>
+        <CardTitle className="text-lg">Редактор шагов</CardTitle>
+        <CardDescription>
+          Сборка сценария из шагов; JSON синхронизируется автоматически.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">{body}</CardContent>
     </Card>
   )
 }

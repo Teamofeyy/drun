@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react'
-import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { Upload } from 'lucide-react'
 import { api, type Agent } from '@/api'
@@ -36,15 +36,28 @@ export function AgentBulkUploadCard({ agents, selectedIds, readOnly }: Props) {
 
   const selectedAgents = agents.filter((agent) => selectedIds.includes(agent.id))
 
+  const scenariosQ = useQuery({
+    queryKey: qk.scenarios,
+    queryFn: api.scenarios,
+    staleTime: 60_000,
+  })
+
+  const deliveryScenario = scenariosQ.data?.find((s) => s.slug === 'bulk-file-delivery')
+
   const upload = useMutation({
     mutationFn: async () => {
       if (!file) throw new Error('Выберите файл')
       if (selectedAgents.length === 0) throw new Error('Выберите хотя бы один агент')
       if (!destinationPath.trim()) throw new Error('Укажите путь назначения')
+      if (!deliveryScenario) {
+        throw new Error(
+          'Системный сценарий bulk-file-delivery не найден. Перезапустите бэкенд, чтобы применился сид.',
+        )
+      }
 
       const buffer = await file.arrayBuffer()
       const contentBase64 = bytesToBase64(buffer)
-      const payload = {
+      const inputs = {
         filename: file.name,
         destination_path: destinationPath.trim(),
         overwrite,
@@ -53,7 +66,12 @@ export function AgentBulkUploadCard({ agents, selectedIds, readOnly }: Props) {
       }
 
       const results = await Promise.allSettled(
-        selectedAgents.map((agent) => api.createTask(agent.id, 'file_upload', payload, 1)),
+        selectedAgents.map((agent) =>
+          api.runScenario(deliveryScenario.id, {
+            agent_id: agent.id,
+            inputs,
+          }),
+        ),
       )
 
       const failed = results.filter((result) => result.status === 'rejected')
@@ -84,7 +102,8 @@ export function AgentBulkUploadCard({ agents, selectedIds, readOnly }: Props) {
       <CardHeader className="pb-4">
         <CardTitle className="text-lg">Bulk File Delivery</CardTitle>
         <CardDescription>
-          Доставка файла на выбранные агенты без shell. Агент только записывает байты по указанному пути.
+          Запуск системного сценария <span className="font-mono">bulk-file-delivery</span>: снимок пути до и
+          после, запись файла без shell. В карточке задачи — сравнение «было / стало».
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
@@ -160,10 +179,24 @@ export function AgentBulkUploadCard({ agents, selectedIds, readOnly }: Props) {
           ) : null}
         </div>
 
+        {scenariosQ.isSuccess && !deliveryScenario ? (
+          <p className="rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm text-amber-900 dark:text-amber-100">
+            Сценарий <span className="font-mono">bulk-file-delivery</span> отсутствует в API. Нужен сид при
+            старте бэкенда (новая БД или ручное создание сценария).
+          </p>
+        ) : null}
+
         <div className="flex justify-end">
           <Button
             type="button"
-            disabled={readOnly || upload.isPending || !file || selectedAgents.length === 0}
+            disabled={
+              readOnly ||
+              upload.isPending ||
+              scenariosQ.isLoading ||
+              !deliveryScenario ||
+              !file ||
+              selectedAgents.length === 0
+            }
             onClick={() => upload.mutate()}
           >
             Отправить файл

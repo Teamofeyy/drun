@@ -1,5 +1,12 @@
-import { Suspense, lazy, type ReactNode } from 'react'
-import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
+import { Suspense, lazy, useLayoutEffect, type ReactNode } from 'react'
+import {
+  BrowserRouter,
+  Navigate,
+  Route,
+  Routes,
+  useLocation,
+  useNavigate,
+} from 'react-router-dom'
 import { getToken } from './api'
 import { PlatformLayout } from '@/components/layout/PlatformLayout'
 import { Login } from './Login'
@@ -33,8 +40,18 @@ const TaskDetail = lazy(() =>
 )
 
 function RequireAuth({ children }: { children: ReactNode }) {
-  if (!getToken()) {
-    return <Navigate to="/" replace />
+  const navigate = useNavigate()
+  const location = useLocation()
+  const token = getToken()
+
+  useLayoutEffect(() => {
+    if (!getToken()) {
+      navigate('/', { replace: true, state: { from: location.pathname } })
+    }
+  }, [navigate, location.pathname, location.search, token])
+
+  if (!token) {
+    return null
   }
   return <>{children}</>
 }

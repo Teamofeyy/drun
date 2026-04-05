@@ -44,6 +44,7 @@ pub async fn list_agents(
             site: r.site,
             segment: r.segment,
             role_tag: r.role_tag,
+            cpu_arch: r.cpu_arch,
         })
         .collect();
 
@@ -73,6 +74,7 @@ pub async fn patch_agent(
     let created_at = current.created_at;
     let last_seen_at = current.last_seen_at;
     let status = current.status.clone();
+    let cpu_arch = current.cpu_arch.clone();
 
     let mut am = current.into_active_model();
     am.site = Set(site.clone());
@@ -93,5 +95,6 @@ pub async fn patch_agent(
         site,
         segment,
         role_tag,
+        cpu_arch,
     }))
 }

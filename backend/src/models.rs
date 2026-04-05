@@ -14,6 +14,7 @@ pub struct AgentRow {
     pub site: String,
     pub segment: String,
     pub role_tag: String,
+    pub cpu_arch: Option<String>,
 }
 
 impl From<entity::agents::Model> for AgentRow {
@@ -27,6 +28,7 @@ impl From<entity::agents::Model> for AgentRow {
             site: m.site,
             segment: m.segment,
             role_tag: m.role_tag,
+            cpu_arch: m.cpu_arch,
         }
     }
 }
@@ -41,6 +43,7 @@ pub struct AgentPublic {
     pub site: String,
     pub segment: String,
     pub role_tag: String,
+    pub cpu_arch: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -191,6 +194,24 @@ pub struct LoginResponse {
 #[derive(Debug, Deserialize)]
 pub struct RegisterAgentRequest {
     pub name: String,
+    /// Опционально: из INFRAHUB_AGENT_CPU_ARCH (Ansible `ansible_facts.architecture`).
+    #[serde(default)]
+    pub cpu_arch: Option<String>,
+}
+
+/// Нормализация архитектуры при регистрации: пустое / слишком длинное / подозрительные символы → None.
+pub fn normalize_register_cpu_arch(raw: Option<&str>) -> Option<String> {
+    let s = raw?.trim();
+    if s.is_empty() || s.len() > 32 {
+        return None;
+    }
+    if !s
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-' || c == '.')
+    {
+        return None;
+    }
+    Some(s.to_string())
 }
 
 #[derive(Debug, Serialize)]
@@ -287,6 +308,15 @@ pub struct RunScenarioRequest {
     pub agent_id: Uuid,
     #[serde(default)]
     pub inputs: serde_json::Value,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct RunScriptRequest {
+    pub agent_id: Uuid,
+    pub script: String,
+    /// Если не задан — 300 секунд (см. бэкенд).
+    #[serde(default)]
+    pub timeout_secs: Option<u64>,
 }
 
 #[derive(Debug, Serialize)]

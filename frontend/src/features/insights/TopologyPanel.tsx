@@ -7,6 +7,7 @@ import {
   Controls,
   Handle,
   MiniMap,
+  Panel,
   Position,
   ReactFlow,
   ReactFlowProvider,
@@ -19,13 +20,16 @@ import {
 } from '@xyflow/react'
 import type { CSSProperties } from 'react'
 import { useEffect, useMemo, useState } from 'react'
+import { MousePointer2, Radar, RefreshCw } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import {
   Card,
   CardContent,
+  CardDescription,
   CardHeader,
   CardTitle,
 } from '@/components/ui/card'
+import { Badge } from '@/components/ui/badge'
 import { Label } from '@/components/ui/label'
 import type { TopologyEdge, TopologyGraph, TopologyNode } from '@/api'
 import { api, canOperate } from '@/api'
@@ -518,7 +522,7 @@ function TopologyFlowView({
   }, [initialNodes, initialEdges, setNodes, setEdges])
 
   return (
-    <div className="topology-flow-shell h-[clamp(420px,62vh,700px)] w-full min-h-[420px] rounded-lg border border-border bg-card">
+    <div className="topology-flow-shell relative h-[clamp(440px,64vh,760px)] w-full min-h-[440px] overflow-hidden rounded-xl border border-border/80 bg-card shadow-sm">
       <ReactFlow
         nodes={nodes}
         edges={edges}
@@ -534,14 +538,30 @@ function TopologyFlowView({
         nodesConnectable={false}
         edgesReconnectable={false}
         proOptions={{ hideAttribution: true }}
+        elevateEdgesOnSelect
       >
         <TopologyFitViewTrigger
           nodesLen={initialNodes.length}
           edgesLen={initialEdges.length}
         />
-        <Background gap={18} className="bg-muted/25" />
-        <Controls showInteractive={false} />
-        <MiniMap maskColor="rgba(0,0,0,0.45)" />
+        <Background gap={20} size={1} className="bg-muted/20" />
+        <Controls showInteractive={false} position="bottom-left" />
+        <MiniMap
+          maskColor="oklch(0 0 0 / 0.42)"
+          className="!bottom-3 !right-3 !m-0 !overflow-hidden !rounded-lg !border !border-border/80 !shadow-md"
+          style={{ width: 168, height: 112 }}
+          pannable
+          zoomable
+        />
+        <Panel
+          position="top-right"
+          className="m-2 max-w-[min(100%,220px)] rounded-lg border border-border/70 bg-card/95 px-2.5 py-1.5 text-[11px] leading-snug text-muted-foreground shadow-sm backdrop-blur-sm"
+        >
+          <span className="flex items-start gap-1.5">
+            <MousePointer2 className="mt-0.5 size-3.5 shrink-0 opacity-70" aria-hidden />
+            Перетаскивание — сдвиг. Колёсико — масштаб. Кнопки слева внизу — zoom и «вписать».
+          </span>
+        </Panel>
       </ReactFlow>
     </div>
   )
@@ -567,33 +587,70 @@ export function TopologyPanel() {
 
   const legend = topologyHeaderLegend(model)
 
+  const statsBadges =
+    model.tag === 'ready' ? (
+      <div className="flex flex-wrap items-center gap-2">
+        <Badge variant="secondary" className="font-normal tabular-nums">
+          {model.flow.agentCount} агентов
+        </Badge>
+        <Badge variant="outline" className="font-normal tabular-nums">
+          {model.flow.graphForLayout.nodes.length} узлов
+        </Badge>
+        <Badge variant="outline" className="font-normal tabular-nums">
+          {model.flow.graphForLayout.edges.length} связей
+        </Badge>
+      </div>
+    ) : null
+
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="text-lg">Топология</CardTitle>
-        <div
-          className={cn('text-sm text-muted-foreground space-y-2')}
-        >
-          <span className="block">
-            <strong className="text-foreground">Синие сплошные</strong> — связь агента с{' '}
-            <strong>платформой</strong> (HTTPS: heartbeat, выдача задач, отчёты). Агенты{' '}
-            <em>не</em> обмениваются данными друг с другом через InfraHub.
-          </span>
-          <span className="block text-muted-foreground">
-            <strong className="text-foreground/90">Пунктир серый</strong> — площадка/сегмент
-            (метаданные). <strong className="text-foreground/90">Пунктир жёлтый</strong> — из
-            отчётов проверок (TCP-порт и проверки связности), это не «сеть между агентами».
-          </span>
-          {legend && (
-            <ul className="list-inside list-disc text-xs text-muted-foreground">
-              <li>{legend.control_plane}</li>
-              <li>{legend.metadata}</li>
-              <li>{legend.observed_probe}</li>
-            </ul>
-          )}
+    <Card className="border-border/70 shadow-sm">
+      <CardHeader className="space-y-3 pb-2">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div className="min-w-0 space-y-1">
+            <div className="flex flex-wrap items-center gap-2 gap-y-1">
+              <CardTitle className="text-xl font-semibold tracking-tight">Топология</CardTitle>
+              {statsBadges}
+            </div>
+            <CardDescription className="text-sm leading-relaxed">
+              Граф связей платформы, агентов, метаданных и (опционально) целей из отчётов проверок.
+            </CardDescription>
+          </div>
         </div>
+
+        <details className="group rounded-xl border border-border/70 bg-muted/15 transition-colors hover:bg-muted/25">
+          <summary className="cursor-pointer list-none px-3 py-2.5 text-sm font-medium text-foreground outline-none marker:hidden [&::-webkit-details-marker]:hidden">
+            <span className="flex items-center justify-between gap-2">
+              <span>Как читать граф</span>
+              <span className="text-xs font-normal text-muted-foreground group-open:hidden">
+                Показать
+              </span>
+              <span className="hidden text-xs font-normal text-muted-foreground group-open:inline">
+                Скрыть
+              </span>
+            </span>
+          </summary>
+          <div className="space-y-2 border-t border-border/60 px-3 py-3 text-sm text-muted-foreground leading-relaxed">
+            <p>
+              <strong className="text-foreground">Синие сплошные</strong> — связь агента с{' '}
+              <strong>платформой</strong> (HTTPS: heartbeat, задачи, отчёты). Агенты{' '}
+              <em>не</em> обмениваются друг с другом через InfraHub.
+            </p>
+            <p>
+              <strong className="text-foreground/90">Серый пунктир</strong> — площадка и сегмент
+              (метаданные). <strong className="text-foreground/90">Жёлтый пунктир</strong> — из
+              отчётов проверок (TCP и связность), это не физическая сеть между агентами.
+            </p>
+            {legend && (
+              <ul className="list-inside list-disc space-y-1 text-xs">
+                <li>{legend.control_plane}</li>
+                <li>{legend.metadata}</li>
+                <li>{legend.observed_probe}</li>
+              </ul>
+            )}
+          </div>
+        </details>
       </CardHeader>
-      <CardContent className="space-y-3">
+      <CardContent className="space-y-4 pt-2">
         {operate && (
           <>
             <ProvisionAgentDialog
@@ -629,15 +686,10 @@ function renderTopologyToolbar(
   onOpenUninstall: () => void,
 ) {
   return (
-    <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+    <div className="flex flex-col gap-3 rounded-xl border border-border/60 bg-muted/10 p-3 sm:p-4">
       {operate && (
-        <>
-          <Button
-            type="button"
-            variant="secondary"
-            size="sm"
-            onClick={onOpenProvision}
-          >
+        <div className="flex flex-wrap gap-2">
+          <Button type="button" variant="secondary" size="sm" onClick={onOpenProvision}>
             Установить агента…
           </Button>
           <Button
@@ -649,54 +701,77 @@ function renderTopologyToolbar(
           >
             Снять агента с ноды…
           </Button>
-        </>
+        </div>
       )}
       {model.tag === 'ready' && model.showProbeToggle && (
-        <div className="flex max-w-xl flex-col gap-1 sm:flex-row sm:items-center sm:gap-3">
-          <div className="flex items-center gap-2">
+        <label
+          htmlFor="topology-probes"
+          className="flex cursor-pointer flex-col gap-2 rounded-lg border border-border/60 bg-card/60 p-3 transition-colors hover:bg-card sm:flex-row sm:items-start sm:gap-4"
+        >
+          <div className="flex items-center gap-2 pt-0.5">
             <input
               id="topology-probes"
               type="checkbox"
               checked={showProbes}
               onChange={(e) => setShowProbes(e.target.checked)}
-              className="h-4 w-4 rounded border-input accent-primary"
+              className="size-4 shrink-0 rounded border-input accent-primary"
             />
             <Label
               htmlFor="topology-probes"
-              className="cursor-pointer text-sm font-normal text-foreground"
+              className="cursor-pointer text-sm font-medium text-foreground"
               title={`Узлов целей: ${model.probeStats.nodes}, рёбер к ним: ${model.probeStats.edges}`}
             >
               Показывать цели из отчётов проверок
             </Label>
           </div>
-          <span className="text-xs text-muted-foreground sm:max-w-md">
-            Снимите галочку, чтобы убрать жёлтые узлы и рёбра — останутся платформа,
-            агенты и серая метаданная часть. Появляются из завершённых{' '}
-            <code className="rounded bg-muted px-1 py-0.5 text-[0.7rem]">
-              port_check
-            </code>{' '}
-            и{' '}
+          <p className="text-xs leading-relaxed text-muted-foreground sm:min-w-0 sm:flex-1">
+            Выключите, чтобы скрыть жёлтые узлы и рёбра. Данные из завершённых{' '}
+            <code className="rounded bg-muted px-1 py-0.5 text-[0.7rem]">port_check</code> и{' '}
             <code className="rounded bg-muted px-1 py-0.5 text-[0.7rem]">
               network_reachability
             </code>
             .
-          </span>
-        </div>
+          </p>
+        </label>
       )}
       {model.tag === 'ready' && !model.showProbeToggle && (
-        <p className="max-w-xl text-xs text-muted-foreground">
-          В последних отчётах нет целей проверок — на графе только платформа, агенты и
-          метаданные. После завершённых задач{' '}
-          <code className="rounded bg-muted px-1 py-0.5 text-[0.7rem]">
-            port_check
-          </code>{' '}
-          /{' '}
+        <p className="text-xs leading-relaxed text-muted-foreground">
+          В отчётах пока нет целей проверок — только платформа, агенты и метаданные. После{' '}
+          <code className="rounded bg-muted px-1 py-0.5 text-[0.7rem]">port_check</code> /{' '}
           <code className="rounded bg-muted px-1 py-0.5 text-[0.7rem]">
             network_reachability
           </code>{' '}
-          появятся жёлтые узлы и переключатель «упростить граф».
+          появятся жёлтые узлы и этот переключатель.
         </p>
       )}
+    </div>
+  )
+}
+
+function GraphLoadingSkeleton() {
+  return (
+    <div
+      className="flex h-[clamp(440px,64vh,760px)] min-h-[440px] w-full flex-col justify-end rounded-xl border border-border/80 bg-muted/20 p-4"
+      aria-busy
+      aria-label="Загрузка графа"
+    >
+      <div className="space-y-3">
+        <div className="h-3 w-1/3 max-w-[200px] animate-pulse rounded-md bg-muted" />
+        <div className="h-3 w-2/3 max-w-[320px] animate-pulse rounded-md bg-muted/80" />
+        <div className="mx-auto mt-8 size-32 animate-pulse rounded-full bg-muted/50" />
+        <div className="mx-auto h-2 w-48 animate-pulse rounded-full bg-muted/40" />
+      </div>
+    </div>
+  )
+}
+
+function EmptyTopologyState({ message }: { message: string }) {
+  return (
+    <div className="flex flex-col items-center justify-center gap-3 rounded-xl border border-dashed border-border/80 bg-muted/10 px-6 py-16 text-center">
+      <div className="flex size-14 items-center justify-center rounded-2xl bg-muted/40 text-muted-foreground">
+        <Radar className="size-7" aria-hidden />
+      </div>
+      <p className="max-w-md text-sm text-muted-foreground leading-relaxed">{message}</p>
     </div>
   )
 }
@@ -704,21 +779,21 @@ function renderTopologyToolbar(
 function renderTopologyBody(model: TopologyPanelModel) {
   switch (model.tag) {
     case 'pending':
-      return (
-        <p className="text-sm text-muted-foreground">Загрузка графа…</p>
-      )
+      return <GraphLoadingSkeleton />
     case 'error':
       return (
         <>
-          <div className="rounded-lg border border-destructive/50 bg-destructive/10 px-4 py-3 text-sm">
-            <p className="mb-3 text-destructive">{model.message}</p>
+          <div className="rounded-xl border border-destructive/40 bg-destructive/5 px-4 py-4 text-sm shadow-sm">
+            <p className="mb-4 text-destructive">{model.message}</p>
             <Button
               type="button"
               variant="outline"
               size="sm"
+              className="gap-2"
               onClick={() => model.refetch()}
             >
-              Повторить
+              <RefreshCw className="size-4" aria-hidden />
+              Повторить загрузку
             </Button>
           </div>
           {model.staleFlow && (
@@ -740,15 +815,15 @@ function renderTopologyBody(model: TopologyPanelModel) {
       )
     case 'malformed':
       return (
-        <p className="text-sm text-destructive">
-          Ответ API топологии неожиданного формата (ожидались массивы nodes и edges).
-        </p>
+        <div className="rounded-xl border border-destructive/40 bg-destructive/5 px-4 py-5 text-center text-sm text-destructive">
+          Ответ API топологии неожиданного формата (ожидались массивы{' '}
+          <code className="rounded bg-destructive/10 px-1">nodes</code> и{' '}
+          <code className="rounded bg-destructive/10 px-1">edges</code>).
+        </div>
       )
     case 'empty':
       return (
-        <p className="text-sm text-muted-foreground">
-          В ответе нет ни одного узла графа.
-        </p>
+        <EmptyTopologyState message="В ответе нет ни одного узла графа. Проверьте API или зарегистрируйте агентов." />
       )
     case 'ready':
       return (

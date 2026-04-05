@@ -1,10 +1,12 @@
 use std::fs;
+use std::io::Read;
 use std::net::SocketAddr;
 use std::path::PathBuf;
-use std::time::Instant;
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
 use serde_json::{json, Value};
+use sha2::{Digest, Sha256};
 use sysinfo::{Disks, Networks, System};
 use tokio::net::{lookup_host, TcpStream};
 
@@ -39,19 +41,26 @@ async fn run_inner(kind: &str, payload: &Value) -> Result<CheckOutput, CheckErro
         "network_reachability" => network_reachability(payload).await,
         "check_bundle" => check_bundle(payload).await,
         "file_upload" => file_upload(payload),
+        "path_snapshot" => path_snapshot(payload),
+        "shell_script" => shell_script(payload).await,
+        "agent_self_update" => agent_self_update(payload).await,
         _ => Err(CheckError::UnknownKind(kind.into())),
     }
 }
 
 pub async fn run(kind: &str, payload: &Value) -> Result<CheckOutput, CheckError> {
+    let kind = kind.trim();
     let mut out = match kind {
+        "scenario_run" => scenario_run(payload).await?,
         "system_info"
         | "port_check"
         | "diagnostic"
         | "network_reachability"
         | "check_bundle"
-        | "file_upload" => run_inner(kind, payload).await?,
-        "scenario_run" => scenario_run(payload).await?,
+        | "file_upload"
+        | "path_snapshot"
+        | "shell_script"
+        | "agent_self_update" => run_inner(kind, payload).await?,
         _ => return Err(CheckError::UnknownKind(kind.into())),
     };
     if out.summary.is_empty() {
@@ -152,8 +161,276 @@ fn autosummary(kind: &str, data: &Value) -> String {
                 .unwrap_or(0);
             format!("Файл доставлен: {path} ({bytes} байт)")
         }
+        "path_snapshot" => {
+            let path = data.get("path").and_then(|v| v.as_str()).unwrap_or("?");
+            let exists = data.get("exists").and_then(|v| v.as_bool()) == Some(true);
+            let kind = data.get("kind").and_then(|v| v.as_str()).unwrap_or("?");
+            if exists {
+                format!("Снимок пути: {path} ({kind})")
+            } else {
+                format!("Снимок пути: {path} (нет)")
+            }
+        }
+        "shell_script" => {
+            if data.get("timed_out").and_then(|v| v.as_bool()) == Some(true) {
+                "Shell: таймаут".into()
+            } else {
+                let code = data.get("exit_code").and_then(|v| v.as_i64()).unwrap_or(-1);
+                format!("Shell: код выхода {code}")
+            }
+        }
         _ => "Готово".into(),
     }
+}
+
+#[cfg(unix)]
+async fn shell_script(payload: &Value) -> Result<CheckOutput, CheckError> {
+    use std::process::Stdio;
+    use tokio::process::Command;
+
+    const MAX_STREAM_BYTES: usize = 256 * 1024;
+
+    let script = payload
+        .get("script")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| CheckError::BadPayload("script required".into()))?;
+    let script = script.trim();
+    if script.is_empty() {
+        return Err(CheckError::BadPayload("script must not be empty".into()));
+    }
+
+    let timeout_secs = payload
+        .get("timeout_secs")
+        .and_then(|v| v.as_u64())
+        .unwrap_or(300)
+        .clamp(1, 3600);
+
+    let mut logs: Vec<(String, String)> = vec![(
+        "info".into(),
+        format!("shell_script: bash -c, timeout={timeout_secs}s"),
+    )];
+
+    let duration = Duration::from_secs(timeout_secs);
+    let fut = async {
+        let child = Command::new("bash")
+            .arg("-c")
+            .arg(script)
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .kill_on_drop(true)
+            .spawn()
+            .map_err(|e| CheckError::BadPayload(format!("spawn failed: {e}")))?;
+        child
+            .wait_with_output()
+            .await
+            .map_err(|e| CheckError::BadPayload(format!("wait failed: {e}")))
+    };
+
+    match tokio::time::timeout(duration, fut).await {
+        Ok(Ok(output)) => {
+            let code = output.status.code().unwrap_or(-1);
+            let stdout_raw = String::from_utf8_lossy(&output.stdout).into_owned();
+            let stderr_raw = String::from_utf8_lossy(&output.stderr).into_owned();
+            let stdout = truncate_utf8_bytes(&stdout_raw, MAX_STREAM_BYTES);
+            let stderr = truncate_utf8_bytes(&stderr_raw, MAX_STREAM_BYTES);
+            if code != 0 {
+                logs.push(("error".into(), format!("exit code {code}")));
+            }
+            Ok(CheckOutput {
+                data: json!({
+                    "exit_code": code,
+                    "timed_out": false,
+                }),
+                stdout: Some(stdout),
+                stderr: Some(stderr),
+                exit_code: code,
+                logs,
+                summary: String::new(),
+            })
+        }
+        Ok(Err(e)) => Err(e),
+        Err(_) => {
+            logs.push(("error".into(), format!("timed out after {timeout_secs}s")));
+            Ok(CheckOutput {
+                data: json!({
+                    "exit_code": 124,
+                    "timed_out": true,
+                }),
+                stdout: None,
+                stderr: Some(format!("Timed out after {timeout_secs}s")),
+                exit_code: 124,
+                logs,
+                summary: String::new(),
+            })
+        }
+    }
+}
+
+#[cfg(not(unix))]
+async fn shell_script(_payload: &Value) -> Result<CheckOutput, CheckError> {
+    Err(CheckError::BadPayload(
+        "shell_script is only supported on Unix-like systems with bash".into(),
+    ))
+}
+
+fn truncate_utf8_bytes(s: &str, max_bytes: usize) -> String {
+    if s.len() <= max_bytes {
+        return s.to_string();
+    }
+    let mut end = max_bytes;
+    while end > 0 && !s.is_char_boundary(end) {
+        end -= 1;
+    }
+    format!("{}…\n[truncated, total {} bytes]", &s[..end], s.len())
+}
+
+/// Имя musl-артефакта на релизе (как в `ansible/playbooks/install_agent.yml`).
+fn musl_download_basename(arch: &str) -> Option<&'static str> {
+    match arch.trim().to_ascii_lowercase().as_str() {
+        "x86_64" | "amd64" => Some("infrahub-agent-x86_64-unknown-linux-musl"),
+        "aarch64" | "arm64" => Some("infrahub-agent-aarch64-unknown-linux-musl"),
+        _ => None,
+    }
+}
+
+#[cfg(unix)]
+async fn agent_self_update(payload: &Value) -> Result<CheckOutput, CheckError> {
+    use std::os::unix::fs::PermissionsExt;
+    use tokio::process::Command;
+
+    let release_base = payload
+        .get("release_base")
+        .and_then(|v| if v.is_null() { None } else { v.as_str() })
+        .ok_or_else(|| CheckError::BadPayload("release_base required".into()))?;
+    let release_base = release_base.trim().trim_end_matches('/');
+    if release_base.is_empty() {
+        return Err(CheckError::BadPayload(
+            "release_base must not be empty".into(),
+        ));
+    }
+
+    let install_path = payload
+        .get("install_path")
+        .and_then(|v| v.as_str())
+        .unwrap_or("/usr/local/bin/infrahub-agent");
+    let install_path = PathBuf::from(install_path);
+
+    let arch_raw = std::env::var("INFRAHUB_AGENT_CPU_ARCH")
+        .ok()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .or_else(|| System::cpu_arch())
+        .unwrap_or_else(|| "unknown".into());
+
+    let basename = musl_download_basename(&arch_raw).ok_or_else(|| {
+        CheckError::BadPayload(format!(
+            "unsupported cpu architecture for musl bundle: {arch_raw}"
+        ))
+    })?;
+
+    let url = format!("{release_base}/{basename}");
+    let parent = install_path
+        .parent()
+        .ok_or_else(|| CheckError::BadPayload("invalid install_path".into()))?;
+    fs::create_dir_all(parent)
+        .map_err(|e| CheckError::BadPayload(format!("create_dir_all: {e}")))?;
+
+    let fname = install_path
+        .file_name()
+        .and_then(|s| s.to_str())
+        .unwrap_or("infrahub-agent");
+    let tmp_path = parent.join(format!(".{fname}.new"));
+
+    let _ = fs::remove_file(&tmp_path);
+
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(300))
+        .build()
+        .map_err(|e| CheckError::BadPayload(format!("http client: {e}")))?;
+
+    let mut logs: Vec<(String, String)> = vec![(
+        "info".into(),
+        format!("agent_self_update: GET {url} (arch={arch_raw})"),
+    )];
+
+    let resp = client
+        .get(&url)
+        .send()
+        .await
+        .map_err(|e| CheckError::BadPayload(format!("download failed: {e}")))?;
+
+    if !resp.status().is_success() {
+        return Err(CheckError::BadPayload(format!(
+            "HTTP {} for {url}",
+            resp.status()
+        )));
+    }
+
+    let bytes = resp
+        .bytes()
+        .await
+        .map_err(|e| CheckError::BadPayload(format!("read body: {e}")))?;
+
+    if bytes.is_empty() {
+        return Err(CheckError::BadPayload("empty release artifact".into()));
+    }
+
+    fs::write(&tmp_path, &bytes).map_err(|e| CheckError::BadPayload(format!("write tmp: {e}")))?;
+
+    let mut perms = fs::metadata(&tmp_path)
+        .map_err(|e| CheckError::BadPayload(format!("metadata tmp: {e}")))?
+        .permissions();
+    perms.set_mode(0o755);
+    fs::set_permissions(&tmp_path, perms)
+        .map_err(|e| CheckError::BadPayload(format!("chmod tmp: {e}")))?;
+
+    fs::rename(&tmp_path, &install_path)
+        .map_err(|e| CheckError::BadPayload(format!("install rename: {e}")))?;
+
+    logs.push((
+        "info".into(),
+        "scheduled systemctl restart infrahub-agent (after task completes)".into(),
+    ));
+
+    tokio::spawn(async {
+        tokio::time::sleep(Duration::from_secs(2)).await;
+        let _ = Command::new("systemctl")
+            .args(["restart", "infrahub-agent"])
+            .status()
+            .await;
+    });
+
+    let summary = format!(
+        "Обновление агента: {basename}, {} MiB, arch {arch_raw}",
+        bytes.len() / 1024 / 1024
+    );
+
+    Ok(CheckOutput {
+        data: json!({
+            "release_url": url,
+            "basename": basename,
+            "bytes_written": bytes.len(),
+            "install_path": install_path.to_string_lossy(),
+            "cpu_arch_resolved": arch_raw,
+            "restart_scheduled": true,
+        }),
+        stdout: Some(format!(
+            "installed {basename} -> {}",
+            install_path.display()
+        )),
+        stderr: None,
+        exit_code: 0,
+        logs,
+        summary,
+    })
+}
+
+#[cfg(not(unix))]
+async fn agent_self_update(_payload: &Value) -> Result<CheckOutput, CheckError> {
+    Err(CheckError::BadPayload(
+        "agent_self_update is only supported on Unix".into(),
+    ))
 }
 
 fn scenario_step_kind(step_type: &str, params: &Value) -> Result<(String, Value), CheckError> {
@@ -161,6 +438,7 @@ fn scenario_step_kind(step_type: &str, params: &Value) -> Result<(String, Value)
         "system_info" | "port_check" | "network_reachability" | "check_bundle" => {
             Ok((step_type.to_string(), params.clone()))
         }
+        "path_snapshot" | "file_upload" => Ok((step_type.to_string(), params.clone())),
         "diagnostic" => Ok(("diagnostic".to_string(), params.clone())),
         "dns_lookup" => Ok((
             "diagnostic".to_string(),
@@ -175,6 +453,7 @@ fn scenario_step_kind(step_type: &str, params: &Value) -> Result<(String, Value)
             "diagnostic".to_string(),
             json!({ "scenario": "memory_disks" }),
         )),
+        "agent_self_update" => Ok(("agent_self_update".to_string(), params.clone())),
         other => Err(CheckError::BadScenario(format!(
             "unsupported scenario step type: {other}"
         ))),
@@ -276,7 +555,10 @@ async fn scenario_run(payload: &Value) -> Result<CheckOutput, CheckError> {
         .iter()
         .filter(|step| step.get("status").and_then(|v| v.as_str()) == Some("done"))
         .count();
-    let summary = format!("Сценарий {scenario_name}: выполнено {done}/{} шагов", results.len());
+    let summary = format!(
+        "Сценарий {scenario_name}: выполнено {done}/{} шагов",
+        results.len()
+    );
 
     Ok(CheckOutput {
         data: json!({
@@ -390,6 +672,7 @@ fn system_info() -> Result<CheckOutput, CheckError> {
         "os_long": os_long,
         "kernel": kernel,
         "cpu_arch": arch,
+        "infrahub_agent_version": env!("CARGO_PKG_VERSION"),
         "cpus_logical": sys.cpus().len(),
         "memory_total_bytes": sys.total_memory(),
         "memory_used_bytes": sys.used_memory(),
@@ -791,6 +1074,120 @@ async fn check_bundle(payload: &Value) -> Result<CheckOutput, CheckError> {
         }
         _ => Err(CheckError::UnknownTemplate(template.into())),
     }
+}
+
+/// Максимум байт файла, для которого считаем SHA256 (защита от больших чтений).
+const PATH_SNAPSHOT_MAX_HASH_BYTES: u64 = 256 * 1024;
+
+fn system_time_to_unix_ms(st: SystemTime) -> Option<i64> {
+    st.duration_since(UNIX_EPOCH)
+        .ok()
+        .and_then(|d| i64::try_from(d.as_millis()).ok())
+}
+
+fn path_snapshot(payload: &Value) -> Result<CheckOutput, CheckError> {
+    let raw_path = payload
+        .get("path")
+        .or_else(|| payload.get("destination_path"))
+        .and_then(|v| v.as_str())
+        .map(str::trim)
+        .filter(|v| !v.is_empty())
+        .ok_or_else(|| CheckError::BadPayload("path or destination_path required".into()))?;
+
+    let path = PathBuf::from(raw_path);
+    let path_display = path.to_string_lossy().to_string();
+
+    if !path.exists() {
+        let data = json!({
+            "path": path_display,
+            "exists": false,
+            "kind": "missing",
+            "size": Value::Null,
+            "modified_unix_ms": Value::Null,
+            "sha256": Value::Null,
+            "hash_skipped_reason": "path does not exist",
+        });
+        return Ok(CheckOutput {
+            data: data.clone(),
+            stdout: Some(format!("path_snapshot: {} (missing)", path_display)),
+            stderr: None,
+            exit_code: 0,
+            logs: vec![(
+                "info".into(),
+                format!("path_snapshot: {} — нет", path_display),
+            )],
+            summary: format!("Снимок: {} — объект отсутствует", path_display),
+        });
+    }
+
+    let meta = fs::metadata(&path).map_err(|e| CheckError::BadPayload(format!("metadata: {e}")))?;
+    let modified_unix_ms = meta.modified().ok().and_then(system_time_to_unix_ms);
+
+    let kind = if meta.is_file() {
+        "file"
+    } else if meta.is_dir() {
+        "directory"
+    } else {
+        "other"
+    };
+
+    let size = if meta.is_file() {
+        Some(meta.len())
+    } else {
+        None
+    };
+
+    let mut sha256_hex: Option<String> = None;
+    let mut hash_skipped_reason: Option<&'static str> = None;
+
+    if meta.is_file() {
+        let len = meta.len();
+        if len <= PATH_SNAPSHOT_MAX_HASH_BYTES {
+            let mut file =
+                fs::File::open(&path).map_err(|e| CheckError::BadPayload(format!("open: {e}")))?;
+            let mut hasher = Sha256::new();
+            let mut buf = [0u8; 8192];
+            let mut remaining = len;
+            while remaining > 0 {
+                let chunk = std::cmp::min(buf.len() as u64, remaining) as usize;
+                let n = file
+                    .read(&mut buf[..chunk])
+                    .map_err(|e| CheckError::BadPayload(format!("read: {e}")))?;
+                if n == 0 {
+                    break;
+                }
+                hasher.update(&buf[..n]);
+                remaining -= n as u64;
+            }
+            sha256_hex = Some(format!("{:x}", hasher.finalize()));
+        } else {
+            hash_skipped_reason = Some("file larger than hash limit");
+        }
+    } else {
+        hash_skipped_reason = Some("not a regular file");
+    }
+
+    let data = json!({
+        "path": path_display,
+        "exists": true,
+        "kind": kind,
+        "size": size,
+        "modified_unix_ms": modified_unix_ms,
+        "sha256": sha256_hex,
+        "hash_skipped_reason": hash_skipped_reason,
+    });
+
+    Ok(CheckOutput {
+        data: data.clone(),
+        stdout: Some(format!("path_snapshot: {} ({kind})", path_display)),
+        stderr: None,
+        exit_code: 0,
+        logs: vec![(
+            "info".into(),
+            format!("path_snapshot: {} ({kind})", path_display),
+        )],
+        summary: format!("Снимок: {} ({kind})", path_display),
+    })
 }
 
 fn file_upload(payload: &Value) -> Result<CheckOutput, CheckError> {

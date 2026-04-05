@@ -525,6 +525,137 @@ function BundleView({ data }: { data: Record<string, unknown> }) {
   )
 }
 
+const PATH_SNAPSHOT_DIFF_KEYS: { key: string; label: string }[] = [
+  { key: 'path', label: 'Путь' },
+  { key: 'exists', label: 'Существует' },
+  { key: 'kind', label: 'Тип' },
+  { key: 'size', label: 'Размер (байт)' },
+  { key: 'modified_unix_ms', label: 'Изменён (UTC)' },
+  { key: 'sha256', label: 'SHA256' },
+  { key: 'hash_skipped_reason', label: 'Почему без SHA256' },
+]
+
+function findScenarioStepById(
+  steps: unknown[],
+  id: string,
+): Record<string, unknown> | null {
+  const row = steps.find((s) => isRecord(s) && s.id === id)
+  return isRecord(row) ? row : null
+}
+
+function pathSnapshotData(
+  step: Record<string, unknown> | null,
+): Record<string, unknown> | null {
+  if (!step) return null
+  const d = step.data
+  if (!isRecord(d)) return null
+  if (!('exists' in d) && !('kind' in d)) return null
+  return d
+}
+
+function shouldShowBulkFileDeliveryDiff(data: Record<string, unknown>): boolean {
+  if (data.scenario_slug === 'bulk-file-delivery') return true
+  const steps = Array.isArray(data.steps) ? data.steps : []
+  const pre = findScenarioStepById(steps, 'pre')
+  if (!pre) return false
+  const kind = String(pre.kind ?? '')
+  const typ = String(pre.type ?? '')
+  return kind === 'path_snapshot' || typ === 'path_snapshot'
+}
+
+function formatSnapshotCell(fieldKey: string, v: unknown): string {
+  if (v === null || v === undefined) return '—'
+  if (typeof v === 'boolean') return v ? 'да' : 'нет'
+  if (fieldKey === 'modified_unix_ms' && typeof v === 'number') {
+    return new Date(v).toISOString()
+  }
+  if (fieldKey === 'size' && typeof v === 'number') {
+    return v.toLocaleString('ru-RU')
+  }
+  return String(v)
+}
+
+function FileDeliveryPathDiff({ data }: { data: Record<string, unknown> }) {
+  if (!shouldShowBulkFileDeliveryDiff(data)) return null
+
+  const steps = Array.isArray(data.steps) ? data.steps : []
+  const preStep = findScenarioStepById(steps, 'pre')
+  const postStep = findScenarioStepById(steps, 'post')
+  const uploadStep = findScenarioStepById(steps, 'upload')
+  const before = pathSnapshotData(preStep)
+  const after = pathSnapshotData(postStep)
+
+  const uploadData =
+    uploadStep && isRecord(uploadStep.data) ? uploadStep.data : null
+
+  if (!before && !after) return null
+
+  return (
+    <div className="rounded-lg border border-primary/30 bg-primary/5 p-4">
+      <h3 className="text-sm font-semibold text-foreground">Файл: до и после</h3>
+      <p className="mt-1 text-xs text-muted-foreground">
+        Сравнение снимков пути назначения (метаданные на агенте).
+      </p>
+      {uploadData && uploadData.bytes_written != null ? (
+        <p className="mt-2 text-xs text-muted-foreground">
+          Записано байт:{' '}
+          <strong className="text-foreground">
+            {String(uploadData.bytes_written)}
+          </strong>
+          {uploadData.destination_path != null ? (
+            <>
+              {' '}
+              →{' '}
+              <span className="font-mono break-all">
+                {String(uploadData.destination_path)}
+              </span>
+            </>
+          ) : null}
+        </p>
+      ) : null}
+      {!after ? (
+        <p className="mt-3 rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-950 dark:text-amber-100">
+          Шаг «после» отсутствует или не выполнен — сценарий мог прерваться на записи файла.
+        </p>
+      ) : null}
+      <div className="mt-3 overflow-x-auto rounded-md border border-border">
+        <table className="w-full min-w-[320px] border-collapse text-left text-xs">
+          <thead>
+            <tr className="border-b border-border bg-muted/40">
+              <th className="px-3 py-2 font-medium">Поле</th>
+              <th className="px-3 py-2 font-medium">До</th>
+              <th className="px-3 py-2 font-medium">После</th>
+            </tr>
+          </thead>
+          <tbody>
+            {PATH_SNAPSHOT_DIFF_KEYS.map(({ key, label }) => {
+              const b = before?.[key]
+              const a = after?.[key]
+              const bStr = formatSnapshotCell(key, b)
+              const aStr = formatSnapshotCell(key, a)
+              const changed =
+                after != null && JSON.stringify(b) !== JSON.stringify(a)
+              return (
+                <tr
+                  key={key}
+                  className={cn(
+                    'border-b border-border/80',
+                    changed && 'bg-amber-500/15 dark:bg-amber-500/10',
+                  )}
+                >
+                  <td className="px-3 py-2 text-muted-foreground">{label}</td>
+                  <td className="px-3 py-2 font-mono break-all">{before ? bStr : '—'}</td>
+                  <td className="px-3 py-2 font-mono break-all">{after ? aStr : '—'}</td>
+                </tr>
+              )
+            })}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  )
+}
+
 function ScenarioRunView({ data }: { data: Record<string, unknown> }) {
   const scenarioName = String(data.scenario_name ?? 'Scenario')
   const steps = Array.isArray(data.steps) ? data.steps : []
@@ -537,6 +668,7 @@ function ScenarioRunView({ data }: { data: Record<string, unknown> }) {
           Шагов: {steps.length}
         </p>
       </div>
+      <FileDeliveryPathDiff data={data} />
       {steps.map((row, i) => {
         const step = row as Record<string, unknown>
         const status = String(step.status ?? 'unknown')
