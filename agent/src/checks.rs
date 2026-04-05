@@ -1,6 +1,9 @@
+use std::fs;
 use std::net::SocketAddr;
+use std::path::PathBuf;
 use std::time::Instant;
 
+use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
 use serde_json::{json, Value};
 use sysinfo::{Disks, Networks, System};
 use tokio::net::{lookup_host, TcpStream};
@@ -15,6 +18,8 @@ pub enum CheckError {
     UnknownScenario(String),
     #[error("unknown bundle template: {0}")]
     UnknownTemplate(String),
+    #[error("invalid scenario definition: {0}")]
+    BadScenario(String),
 }
 
 pub struct CheckOutput {
@@ -26,13 +31,27 @@ pub struct CheckOutput {
     pub summary: String,
 }
 
+async fn run_inner(kind: &str, payload: &Value) -> Result<CheckOutput, CheckError> {
+    match kind {
+        "system_info" => system_info(),
+        "port_check" => port_check(payload).await,
+        "diagnostic" => diagnostic(payload).await,
+        "network_reachability" => network_reachability(payload).await,
+        "check_bundle" => check_bundle(payload).await,
+        "file_upload" => file_upload(payload),
+        _ => Err(CheckError::UnknownKind(kind.into())),
+    }
+}
+
 pub async fn run(kind: &str, payload: &Value) -> Result<CheckOutput, CheckError> {
     let mut out = match kind {
-        "system_info" => system_info()?,
-        "port_check" => port_check(payload).await?,
-        "diagnostic" => diagnostic(payload).await?,
-        "network_reachability" => network_reachability(payload).await?,
-        "check_bundle" => check_bundle(payload).await?,
+        "system_info"
+        | "port_check"
+        | "diagnostic"
+        | "network_reachability"
+        | "check_bundle"
+        | "file_upload" => run_inner(kind, payload).await?,
+        "scenario_run" => scenario_run(payload).await?,
         _ => return Err(CheckError::UnknownKind(kind.into())),
     };
     if out.summary.is_empty() {
@@ -98,8 +117,186 @@ fn autosummary(kind: &str, data: &Value) -> String {
             .and_then(|v| v.as_str())
             .map(|t| format!("Шаблон «{t}»"))
             .unwrap_or_else(|| "Комплексная проверка".into()),
+        "scenario_run" => data
+            .get("scenario_name")
+            .and_then(|v| v.as_str())
+            .map(|name| {
+                let total = data
+                    .get("steps")
+                    .and_then(|v| v.as_array())
+                    .map(|v| v.len())
+                    .unwrap_or(0);
+                let ok = data
+                    .get("steps")
+                    .and_then(|v| v.as_array())
+                    .map(|steps| {
+                        steps
+                            .iter()
+                            .filter(|step| {
+                                step.get("status").and_then(|v| v.as_str()) == Some("done")
+                            })
+                            .count()
+                    })
+                    .unwrap_or(0);
+                format!("Сценарий {name}: шагов {total}, успешно {ok}")
+            })
+            .unwrap_or_else(|| "Сценарий выполнен".into()),
+        "file_upload" => {
+            let path = data
+                .get("destination_path")
+                .and_then(|v| v.as_str())
+                .unwrap_or("?");
+            let bytes = data
+                .get("bytes_written")
+                .and_then(|v| v.as_u64())
+                .unwrap_or(0);
+            format!("Файл доставлен: {path} ({bytes} байт)")
+        }
         _ => "Готово".into(),
     }
+}
+
+fn scenario_step_kind(step_type: &str, params: &Value) -> Result<(String, Value), CheckError> {
+    match step_type {
+        "system_info" | "port_check" | "network_reachability" | "check_bundle" => {
+            Ok((step_type.to_string(), params.clone()))
+        }
+        "diagnostic" => Ok(("diagnostic".to_string(), params.clone())),
+        "dns_lookup" => Ok((
+            "diagnostic".to_string(),
+            json!({
+                "scenario": "dns_lookup",
+                "host": params.get("host").cloned().unwrap_or(Value::Null),
+            }),
+        )),
+        "hostname" => Ok(("diagnostic".to_string(), json!({ "scenario": "hostname" }))),
+        "cpu_load" => Ok(("diagnostic".to_string(), json!({ "scenario": "cpu_load" }))),
+        "memory_disks" => Ok((
+            "diagnostic".to_string(),
+            json!({ "scenario": "memory_disks" }),
+        )),
+        other => Err(CheckError::BadScenario(format!(
+            "unsupported scenario step type: {other}"
+        ))),
+    }
+}
+
+fn resolve_inputs(value: &Value, inputs: &Value) -> Value {
+    match value {
+        Value::String(s) => {
+            if let Some(path) = s
+                .strip_prefix("{{inputs.")
+                .and_then(|rest| rest.strip_suffix("}}"))
+            {
+                return inputs.get(path).cloned().unwrap_or(Value::Null);
+            }
+            Value::String(s.clone())
+        }
+        Value::Array(items) => Value::Array(
+            items
+                .iter()
+                .map(|item| resolve_inputs(item, inputs))
+                .collect(),
+        ),
+        Value::Object(map) => {
+            let mut out = serde_json::Map::new();
+            for (k, v) in map {
+                out.insert(k.clone(), resolve_inputs(v, inputs));
+            }
+            Value::Object(out)
+        }
+        _ => value.clone(),
+    }
+}
+
+async fn scenario_run(payload: &Value) -> Result<CheckOutput, CheckError> {
+    let definition = payload
+        .get("definition")
+        .ok_or_else(|| CheckError::BadScenario("definition required".into()))?;
+    let steps = definition
+        .get("steps")
+        .and_then(|v| v.as_array())
+        .ok_or_else(|| CheckError::BadScenario("definition.steps[] required".into()))?;
+    let inputs = payload.get("inputs").cloned().unwrap_or_else(|| json!({}));
+    let scenario_name = payload
+        .get("scenario_name")
+        .and_then(|v| v.as_str())
+        .unwrap_or("scenario");
+
+    let mut run_logs: Vec<(String, String)> = vec![(
+        "info".into(),
+        format!("scenario_run: {scenario_name}, steps={}", steps.len()),
+    )];
+    let mut results = Vec::new();
+    let mut combined_stdout = Vec::new();
+
+    for step in steps {
+        let id = step
+            .get("id")
+            .and_then(|v| v.as_str())
+            .unwrap_or("step")
+            .to_string();
+        let title = step
+            .get("title")
+            .and_then(|v| v.as_str())
+            .unwrap_or(&id)
+            .to_string();
+        let step_type = step
+            .get("type")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| CheckError::BadScenario(format!("step {id}: type required")))?;
+        let params = resolve_inputs(step.get("params").unwrap_or(&Value::Null), &inputs);
+        let (kind, resolved_payload) = scenario_step_kind(step_type, &params)?;
+
+        run_logs.push(("info".into(), format!("step {id}: {title} ({step_type})")));
+        let out = run_inner(&kind, &resolved_payload).await?;
+        run_logs.extend(
+            out.logs
+                .iter()
+                .map(|(level, message)| (level.clone(), format!("[{id}] {message}"))),
+        );
+        if let Some(stdout) = &out.stdout {
+            combined_stdout.push(format!("[{id}] {stdout}"));
+        }
+        results.push(json!({
+            "id": id,
+            "title": title,
+            "type": step_type,
+            "kind": kind,
+            "status": if out.exit_code == 0 { "done" } else { "failed" },
+            "summary": out.summary,
+            "stdout": out.stdout,
+            "stderr": out.stderr,
+            "exit_code": out.exit_code,
+            "data": out.data,
+        }));
+    }
+
+    let done = results
+        .iter()
+        .filter(|step| step.get("status").and_then(|v| v.as_str()) == Some("done"))
+        .count();
+    let summary = format!("Сценарий {scenario_name}: выполнено {done}/{} шагов", results.len());
+
+    Ok(CheckOutput {
+        data: json!({
+            "scenario_id": payload.get("scenario_id").cloned().unwrap_or(Value::Null),
+            "scenario_name": scenario_name,
+            "scenario_slug": payload.get("scenario_slug").cloned().unwrap_or(Value::Null),
+            "scenario_version": payload.get("scenario_version").cloned().unwrap_or(Value::Null),
+            "inputs": inputs,
+            "steps": results,
+        }),
+        stdout: if combined_stdout.is_empty() {
+            None
+        } else {
+            Some(combined_stdout.join("\n"))
+        },
+        stderr: None,
+        exit_code: 0,
+        logs: run_logs,
+        summary,
+    })
 }
 
 fn system_info() -> Result<CheckOutput, CheckError> {
@@ -594,4 +791,91 @@ async fn check_bundle(payload: &Value) -> Result<CheckOutput, CheckError> {
         }
         _ => Err(CheckError::UnknownTemplate(template.into())),
     }
+}
+
+fn file_upload(payload: &Value) -> Result<CheckOutput, CheckError> {
+    let destination_path = payload
+        .get("destination_path")
+        .and_then(|v| v.as_str())
+        .map(str::trim)
+        .filter(|v| !v.is_empty())
+        .ok_or_else(|| CheckError::BadPayload("destination_path required".into()))?;
+    let content_base64 = payload
+        .get("content_base64")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| CheckError::BadPayload("content_base64 required".into()))?;
+    let overwrite = payload
+        .get("overwrite")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(true);
+    let create_parents = payload
+        .get("create_parents")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(true);
+    let filename = payload
+        .get("filename")
+        .and_then(|v| v.as_str())
+        .filter(|v| !v.trim().is_empty())
+        .map(ToOwned::to_owned)
+        .unwrap_or_else(|| {
+            PathBuf::from(destination_path)
+                .file_name()
+                .and_then(|v| v.to_str())
+                .unwrap_or("uploaded.bin")
+                .to_string()
+        });
+
+    let bytes = BASE64
+        .decode(content_base64.as_bytes())
+        .map_err(|e| CheckError::BadPayload(format!("content_base64: {e}")))?;
+
+    let path = PathBuf::from(destination_path);
+    if path.exists() && !overwrite {
+        return Err(CheckError::BadPayload(format!(
+            "destination already exists: {}",
+            path.display()
+        )));
+    }
+
+    if let Some(parent) = path.parent() {
+        if !parent.as_os_str().is_empty() {
+            if create_parents {
+                fs::create_dir_all(parent)
+                    .map_err(|e| CheckError::BadPayload(format!("create parent dirs: {e}")))?;
+            } else if !parent.exists() {
+                return Err(CheckError::BadPayload(format!(
+                    "parent directory does not exist: {}",
+                    parent.display()
+                )));
+            }
+        }
+    }
+
+    fs::write(&path, &bytes).map_err(|e| CheckError::BadPayload(format!("write file: {e}")))?;
+
+    Ok(CheckOutput {
+        data: json!({
+            "filename": filename,
+            "destination_path": path.to_string_lossy(),
+            "bytes_written": bytes.len(),
+            "overwrite": overwrite,
+            "create_parents": create_parents,
+        }),
+        stdout: Some(format!(
+            "written {} bytes to {}",
+            bytes.len(),
+            path.to_string_lossy()
+        )),
+        stderr: None,
+        exit_code: 0,
+        logs: vec![(
+            "info".into(),
+            format!(
+                "file_upload: {} bytes -> {}",
+                bytes.len(),
+                path.to_string_lossy()
+            ),
+        )],
+        summary: format!("Файл доставлен: {}", path.to_string_lossy()),
+    })
 }

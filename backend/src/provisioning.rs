@@ -11,12 +11,7 @@ use serde::{Deserialize, Serialize};
 use tempfile::TempDir;
 use tokio::process::Command;
 
-use crate::{
-    error::ApiError,
-    roles::UserRole,
-    session::resolve_session,
-    state::AppState,
-};
+use crate::{error::ApiError, roles::UserRole, session::resolve_session, state::AppState};
 
 /// Максимум текста stdout/stderr в JSON-ответе
 const OUTPUT_CAP: usize = 48 * 1024;
@@ -157,10 +152,7 @@ pub async fn provision_agent(
             let message = if ok {
                 "provision finished".into()
             } else {
-                format!(
-                    "ansible-playbook exited with code {:?}",
-                    out.exit_code
-                )
+                format!("ansible-playbook exited with code {:?}", out.exit_code)
             };
             Ok(Json(ProvisionAgentResponse {
                 ok,
@@ -224,10 +216,7 @@ pub async fn uninstall_agent(
             let message = if ok {
                 "uninstall finished".into()
             } else {
-                format!(
-                    "ansible-playbook exited with code {:?}",
-                    out.exit_code
-                )
+                format!("ansible-playbook exited with code {:?}", out.exit_code)
             };
             Ok(Json(ProvisionAgentResponse {
                 ok,
@@ -335,7 +324,9 @@ fn validate_ssh_target(
     })
 }
 
-fn validate_provision_request(body: ProvisionAgentRequest) -> Result<ValidatedProvisionRequest, ApiError> {
+fn validate_provision_request(
+    body: ProvisionAgentRequest,
+) -> Result<ValidatedProvisionRequest, ApiError> {
     let infrahub = body.infrahub_api_base.trim().to_string();
 
     if !validate_infrahub_base(&infrahub) {
@@ -384,10 +375,7 @@ fn validate_host(host: &str) -> bool {
         if label.is_empty() || label.len() > 63 {
             return false;
         }
-        if !label
-            .chars()
-            .all(|c| c.is_ascii_alphanumeric() || c == '-')
-        {
+        if !label.chars().all(|c| c.is_ascii_alphanumeric() || c == '-') {
             return false;
         }
     }
@@ -476,7 +464,10 @@ fn ansible_playbook_executable() -> PathBuf {
             return canonicalize_if_file(venv_pb);
         }
     }
-    for c in ["/usr/bin/ansible-playbook", "/usr/local/bin/ansible-playbook"] {
+    for c in [
+        "/usr/bin/ansible-playbook",
+        "/usr/local/bin/ansible-playbook",
+    ] {
         if Path::new(c).is_file() {
             return PathBuf::from(c);
         }
@@ -534,8 +525,7 @@ async fn run_ansible_playbook(
         .await
         .map_err(|e| format!("write inventory: {e}"))?;
 
-    let extra_yaml =
-        serde_yaml::to_string(extra_vars).map_err(|e| format!("extra yaml: {e}"))?;
+    let extra_yaml = serde_yaml::to_string(extra_vars).map_err(|e| format!("extra yaml: {e}"))?;
     tokio::fs::write(&extra_path, extra_yaml)
         .await
         .map_err(|e| format!("write extra: {e}"))?;
@@ -585,12 +575,10 @@ async fn run_ansible_playbook(
         c
     };
 
-    cmd.stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .env(
-            "ANSIBLE_SSH_COMMON_ARGS",
-            "-o StrictHostKeyChecking=accept-new",
-        );
+    cmd.stdout(Stdio::piped()).stderr(Stdio::piped()).env(
+        "ANSIBLE_SSH_COMMON_ARGS",
+        "-o StrictHostKeyChecking=accept-new",
+    );
     let cfg = ansible_dir.join("ansible.cfg");
     if cfg.is_file() {
         if let Some(s) = cfg.to_str() {

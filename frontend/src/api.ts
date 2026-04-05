@@ -166,6 +166,30 @@ export const api = {
   agents() {
     return apiFetch('/api/v1/agents') as Promise<Agent[]>
   },
+  scenarios() {
+    return apiFetch('/api/v1/scenarios') as Promise<Scenario[]>
+  },
+  scenario(id: string) {
+    return apiFetch(`/api/v1/scenarios/${id}`) as Promise<Scenario>
+  },
+  createScenario(body: ScenarioUpsertBody) {
+    return apiFetch('/api/v1/scenarios', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }) as Promise<Scenario>
+  },
+  runScenario(id: string, body: ScenarioRunBody) {
+    return apiFetch(`/api/v1/scenarios/${id}/run`, {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }) as Promise<Task>
+  },
+  updateScenario(id: string, body: ScenarioUpsertBody) {
+    return apiFetch(`/api/v1/scenarios/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(body),
+    }) as Promise<Scenario>
+  },
   patchAgent(
     id: string,
     body: { site?: string; segment?: string; role_tag?: string },
@@ -259,6 +283,39 @@ export type Agent = {
   role_tag: string
 }
 
+export type Scenario = {
+  id: string
+  slug: string
+  name: string
+  description: string
+  tags: string[]
+  definition: unknown
+  input_schema: unknown
+  summary_template: string | null
+  status: string
+  version: number
+  is_preset: boolean
+  created_by: string | null
+  created_at: string
+  updated_at: string
+}
+
+export type ScenarioUpsertBody = {
+  name: string
+  slug?: string
+  description: string
+  tags: string[]
+  definition: unknown
+  input_schema: unknown
+  summary_template: string | null
+  status: string
+}
+
+export type ScenarioRunBody = {
+  agent_id: string
+  inputs: unknown
+}
+
 export type Task = {
   id: string
   agent_id: string
@@ -341,6 +398,10 @@ export type TopologyNode = {
   id: string
   label: string
   type: string
+  agent_status?: string
+  hostname?: string
+  primary_ip?: string
+  os_long?: string
   site?: string
   segment?: string
   role_tag?: string

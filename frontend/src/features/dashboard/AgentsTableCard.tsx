@@ -51,10 +51,16 @@ export function AgentsTableCard({
   agents,
   loading,
   canEditMeta,
+  selectedIds = [],
+  onToggleAgent,
+  onToggleAll,
 }: {
   agents: Agent[]
   loading: boolean
   canEditMeta: boolean
+  selectedIds?: string[]
+  onToggleAgent?: (agentId: string, checked: boolean) => void
+  onToggleAll?: (checked: boolean) => void
 }) {
   const qc = useQueryClient()
   const [edit, setEdit] = useState<Agent | null>(null)
@@ -81,14 +87,16 @@ export function AgentsTableCard({
     setRoleTag(a.role_tag ?? '')
   }
 
+  const selectable = Boolean(onToggleAgent)
+  const allSelected = agents.length > 0 && agents.every((agent) => selectedIds.includes(agent.id))
+
   return (
     <>
       <Card>
         <CardHeader>
           <CardTitle className="text-lg">Агенты</CardTitle>
           <CardDescription>
-            Обновление по SSE (~2 с) и резервный опрос. Площадка / сегмент / роль
-            узла — для группировки и топологии.
+            Реестр агентов, статусы и метаданные. Отсюда удобно выбирать узлы для массовых операций.
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -102,6 +110,16 @@ export function AgentsTableCard({
             <Table>
               <TableHeader>
                 <TableRow>
+                  {selectable && (
+                    <TableHead className="w-[44px]">
+                      <input
+                        type="checkbox"
+                        checked={allSelected}
+                        onChange={(event) => onToggleAll?.(event.target.checked)}
+                        aria-label="Выбрать всех агентов"
+                      />
+                    </TableHead>
+                  )}
                   <TableHead>Имя</TableHead>
                   <TableHead>Статус</TableHead>
                   <TableHead className="hidden lg:table-cell">Площадка</TableHead>
@@ -115,6 +133,16 @@ export function AgentsTableCard({
               <TableBody>
                 {agents.map((a) => (
                   <TableRow key={a.id}>
+                    {selectable && (
+                      <TableCell>
+                        <input
+                          type="checkbox"
+                          checked={selectedIds.includes(a.id)}
+                          onChange={(event) => onToggleAgent?.(a.id, event.target.checked)}
+                          aria-label={`Выбрать агента ${a.name}`}
+                        />
+                      </TableCell>
+                    )}
                     <TableCell className="font-medium">{a.name}</TableCell>
                     <TableCell>
                       <Badge variant={statusVariant(a.status)}>{a.status}</Badge>
