@@ -6,7 +6,7 @@ name: InfraHub build & deploy
 
 on:
   push:
-    branches: [master, main]
+    branches: [feat/deploy]
 
 jobs:
   build:

@@ -1,13 +1,3 @@
-# Один файл и для ноутбука, и для VPS.
-#
-# Локально: docker compose up --build
-#   Образы собираются и тегируются как local/infrahub-* (см. image + build).
-#   UI: http://localhost:3000  Postgres: localhost:5432  Redis: 6379  API: 8080
-#
-# На VPS (CI подставляет DOCKER_USER): docker compose pull && docker compose up -d
-#   В .env обязательно: DOCKER_USER, JWT_SECRET
-#   Для нормального HTTPS снаружи часто: FRONTEND_HTTP=80 FRONTEND_HTTPS_BIND=443
-
 services:
   postgres:
     image: postgres:16-alpine
