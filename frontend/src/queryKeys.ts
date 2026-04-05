@@ -1,0 +1,16 @@
+export const qk = {
+  agents: ['agents'] as const,
+  tasks: ['tasks'] as const,
+  metrics: ['metrics', 'summary'] as const,
+  me: ['me'] as const,
+  analyticsDaily: ['analytics', 'daily'] as const,
+  analyticsRanking: ['analytics', 'ranking'] as const,
+  analyticsGroups: ['analytics', 'groups'] as const,
+  topology: ['topology', 'graph'] as const,
+  scenarios: ['scenarios'] as const,
+  scenario: (id: string) => ['scenario', id] as const,
+  provisionAgentDefaults: ['provision-agent', 'defaults'] as const,
+  task: (id: string) => ['task', id] as const,
+  taskResult: (id: string) => ['taskResult', id] as const,
+  taskLogs: (id: string) => ['taskLogs', id] as const,
+}

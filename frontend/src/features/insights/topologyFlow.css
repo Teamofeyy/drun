@@ -1,0 +1,69 @@
+/**
+ * React Flow: панель управления и подписи рёбер должны использовать те же
+ * CSS-переменные, что и тема (oklch). Не использовать hsl(var(--token)).
+ */
+
+/* Ручки нужны для геометрии рёбер; стандартные точки не показываем. */
+.topology-flow-shell .topology-invisible-handle {
+  opacity: 0 !important;
+  width: 1px !important;
+  height: 1px !important;
+  min-width: 1px !important;
+  min-height: 1px !important;
+  border: 0 !important;
+  background: transparent !important;
+  pointer-events: none;
+}
+
+.topology-flow-shell .react-flow__controls {
+  background: var(--card) !important;
+  border: 1px solid var(--border) !important;
+  border-radius: var(--radius);
+  overflow: hidden;
+  box-shadow: 0 1px 2px oklch(0 0 0 / 0.06);
+}
+
+.dark .topology-flow-shell .react-flow__controls {
+  box-shadow: 0 1px 2px oklch(0 0 0 / 0.4);
+}
+
+.topology-flow-shell .react-flow__controls-button {
+  background: var(--card) !important;
+  color: var(--foreground);
+  border: none;
+  border-bottom: 1px solid var(--border);
+}
+
+.topology-flow-shell .react-flow__controls-button:last-child {
+  border-bottom: none;
+}
+
+.topology-flow-shell .react-flow__controls-button:hover {
+  background: var(--muted) !important;
+}
+
+.topology-flow-shell .react-flow__controls-button svg {
+  fill: currentColor;
+  max-width: 12px;
+  max-height: 12px;
+}
+
+.topology-flow-shell .react-flow__minimap {
+  background: var(--card) !important;
+  border: 1px solid var(--border) !important;
+  border-radius: var(--radius-sm);
+}
+
+.topology-flow-shell .react-flow__panel {
+  margin: 0;
+}
+
+/* Подстраховка подписей, если инлайн-стили когда-либо снова станут невалидными */
+.topology-flow-shell .react-flow__edge-text {
+  fill: var(--muted-foreground);
+}
+
+.topology-flow-shell .react-flow__edge-textbg {
+  fill: var(--card);
+  fill-opacity: 0.93;
+}

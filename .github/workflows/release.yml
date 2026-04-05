@@ -1,0 +1,258 @@
+name: CI and release
+
+on:
+  push:
+    branches: [master, main, feat/crosscompile]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: release-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: rustfmt
+        run: cargo fmt --all -- --check
+
+      - name: clippy
+        run: cargo clippy --workspace --all-targets -- -D warnings
+
+  # --- backend: single static musl (x86_64) ---------------------------------
+  backend-linux-musl:
+    needs: lint
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-unknown-linux-musl
+
+      - uses: goto-bus-stop/setup-zig@v2
+
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-zigbuild
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: ". -> target"
+
+      - name: Build backend (musl)
+        run: |
+          cargo zigbuild --release -p infrahub-backend \
+            --target x86_64-unknown-linux-musl
+
+      - name: Stage binary
+        run: |
+          mkdir -p upload
+          cp target/x86_64-unknown-linux-musl/release/infrahub-backend \
+            upload/infrahub-backend-x86_64-unknown-linux-musl
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: backend-musl-amd64
+          path: upload/infrahub-backend-x86_64-unknown-linux-musl
+
+  # --- agent: Linux musl x86_64 -------------------------------------------
+  agent-linux-musl-amd64:
+    needs: lint
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-unknown-linux-musl
+
+      - uses: goto-bus-stop/setup-zig@v2
+
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-zigbuild
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: ". -> target"
+
+      - name: Build agent (musl amd64)
+        run: |
+          cargo zigbuild --release -p infrahub-agent \
+            --target x86_64-unknown-linux-musl
+
+      - name: Stage binary
+        run: |
+          mkdir -p upload
+          cp target/x86_64-unknown-linux-musl/release/infrahub-agent \
+            upload/infrahub-agent-x86_64-unknown-linux-musl
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: agent-musl-amd64
+          path: upload/infrahub-agent-x86_64-unknown-linux-musl
+
+  # --- agent: Linux musl aarch64 -----------------------------------------
+  agent-linux-musl-arm64:
+    needs: lint
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-unknown-linux-musl
+
+      - uses: goto-bus-stop/setup-zig@v2
+
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-zigbuild
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: ". -> target"
+
+      - name: Build agent (musl arm64)
+        run: |
+          cargo zigbuild --release -p infrahub-agent \
+            --target aarch64-unknown-linux-musl
+
+      - name: Stage binary
+        run: |
+          mkdir -p upload
+          cp target/aarch64-unknown-linux-musl/release/infrahub-agent \
+            upload/infrahub-agent-aarch64-unknown-linux-musl
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: agent-musl-arm64
+          path: upload/infrahub-agent-aarch64-unknown-linux-musl
+
+  # --- agent: Windows x86_64 (static CRT) ---------------------------------
+  agent-windows-amd64:
+    needs: lint
+    if: github.event_name != 'pull_request'
+    runs-on: windows-latest
+    env:
+      RUSTFLAGS: -C target-feature=+crt-static
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: ". -> target"
+
+      - name: Build agent (Windows x64)
+        run: cargo build --release -p infrahub-agent
+
+      - name: Stage binary
+        shell: bash
+        run: |
+          mkdir -p upload
+          cp target/release/infrahub-agent.exe \
+            upload/infrahub-agent-x86_64-pc-windows-msvc.exe
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: agent-windows-amd64
+          path: upload/infrahub-agent-x86_64-pc-windows-msvc.exe
+
+  # --- agent: .deb (amd64, glibc, typical for Debian/Ubuntu) ------------
+  agent-deb:
+    needs: lint
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: ". -> target"
+
+      - name: Build agent (glibc, for .deb)
+        run: cargo build --release -p infrahub-agent
+
+      - name: Package .deb
+        run: |
+          set -euo pipefail
+          VERSION="$(cargo metadata --no-deps --format-version=1 \
+            | jq -r '.packages[] | select(.name=="infrahub-agent") | .version')"
+          ROOT="debroot"
+          mkdir -p "$ROOT/DEBIAN" "$ROOT/usr/bin"
+          cp target/release/infrahub-agent "$ROOT/usr/bin/infrahub-agent"
+          chmod 755 "$ROOT/usr/bin/infrahub-agent"
+          {
+            echo "Package: infrahub-agent"
+            echo "Version: ${VERSION}"
+            echo "Section: net"
+            echo "Priority: optional"
+            echo "Architecture: amd64"
+            echo "Maintainer: infrahub <infrahub@localhost>"
+            echo "Description: InfraHub diagnostic agent"
+            echo " Connects to InfraHub and runs host checks."
+          } > "$ROOT/DEBIAN/control"
+          mkdir -p upload
+          dpkg-deb --root-owner-group -Zxz -b "$ROOT" \
+            "upload/infrahub-agent_${VERSION}_amd64.deb"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: agent-deb
+          path: upload/infrahub-agent_*_amd64.deb
+
+  publish:
+    needs:
+      - backend-linux-musl
+      - agent-linux-musl-amd64
+      - agent-linux-musl-arm64
+      - agent-windows-amd64
+      - agent-deb
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          pattern: '*'
+          merge-multiple: true
+
+      - name: Flatten artifacts for release
+        run: |
+          mkdir -p release-assets
+          find dist -type f -exec cp -t release-assets {} +
+          ls -la release-assets
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: stable
+          name: Stable
+          prerelease: false
+          generate_release_notes: true
+          fail_on_unmatched_files: false
+          files: release-assets/*
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

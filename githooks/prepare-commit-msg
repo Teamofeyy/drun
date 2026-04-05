@@ -1,0 +1,6 @@
+#!/bin/sh
+# Strip IDE-injected trailer so commits stay clean.
+msg="$1"
+[ -n "$msg" ] && [ -f "$msg" ] || exit 0
+grep -v '^Made-with: Cursor$' "$msg" > "$msg.tmp" && mv "$msg.tmp" "$msg"
+exit 0

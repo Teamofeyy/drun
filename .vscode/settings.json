@@ -1,0 +1,4 @@
+{
+  "rust-analyzer.check.invocationStrategy": "once",
+  "rust-analyzer.cargo.allFeatures": true
+}

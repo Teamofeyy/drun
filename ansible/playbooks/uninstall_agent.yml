@@ -1,0 +1,39 @@
+---
+# Снятие infrahub-agent с удалённого Linux-хоста (те же пути, что install_agent.yml).
+- name: Uninstall InfraHub agent
+  hosts: all
+  become: true
+  vars:
+    infrahub_agent_install_path: /usr/local/bin/infrahub-agent
+    infrahub_agent_state_dir: /var/lib/infrahub-agent
+  tasks:
+    - name: Stop and disable service if unit exists
+      ansible.builtin.systemd:
+        name: infrahub-agent
+        enabled: false
+        state: stopped
+      ignore_errors: true
+
+    - name: Remove systemd unit file
+      ansible.builtin.file:
+        path: /etc/systemd/system/infrahub-agent.service
+        state: absent
+
+    - name: Remove environment defaults file
+      ansible.builtin.file:
+        path: /etc/default/infrahub-agent
+        state: absent
+
+    - name: Reload systemd
+      ansible.builtin.systemd:
+        daemon_reload: true
+
+    - name: Remove agent binary
+      ansible.builtin.file:
+        path: "{{ infrahub_agent_install_path }}"
+        state: absent
+
+    - name: Remove agent state directory
+      ansible.builtin.file:
+        path: "{{ infrahub_agent_state_dir }}"
+        state: absent
