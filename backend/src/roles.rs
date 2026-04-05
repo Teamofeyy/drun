@@ -1,7 +1,4 @@
-//! Роли доступа: наблюдатель < оператор < администратор.
-
 use axum::http::StatusCode;
-
 use crate::error::ApiError;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -36,7 +33,6 @@ impl UserRole {
         }
     }
 
-    /// Достаточно ли прав для действия, требующего минимум `min`.
     pub fn satisfies(self, min: Self) -> bool {
         self.rank() >= min.rank()
     }

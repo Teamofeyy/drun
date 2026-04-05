@@ -1,13 +1,4 @@
-//! Топология для UI: что реально известно системе.
-//!
-//! - **Платформа** — единый узел InfraHub (REST + SSE). Агенты **не ходят друг к другу**
-//!   через нас: только **к платформе** (WebSocket + heartbeat JSON, опциональный HTTP poll задач, complete/fail).
-//! - **Метаданные** — связи агента с площадкой/сегментом (логическая группировка).
-//! - **Наблюдаемые проверки** — из результатов `port_check` / `network_reachability`:
-//!   это «агент пробовал достучаться до хоста:порт», а не обмен пакетами между агентами.
-
-use std::collections::{HashMap, HashSet};
-
+use std::collections::HashSet;
 use axum::{extract::State, http::HeaderMap, Json};
 use sea_orm::{ColumnTrait, EntityTrait, QueryFilter, QueryOrder, QuerySelect};
 use serde_json::{json, Value};

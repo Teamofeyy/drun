@@ -8,9 +8,7 @@ pub struct Config {
     pub admin_username: String,
     pub admin_password: String,
     pub bind: String,
-    /// Сколько задач одновременно может быть в статусе running на одном агенте
     pub agent_max_concurrent_tasks: i64,
-    /// Таймаут `ansible-playbook` для provision-agent (секунды)
     pub provision_timeout_secs: u64,
     /// Дефолт каталога URL релиза агента (GET /admin/provision-agent-defaults и fallback в POST, если поле не прислали)
     pub default_infrahub_agent_release_base: String,

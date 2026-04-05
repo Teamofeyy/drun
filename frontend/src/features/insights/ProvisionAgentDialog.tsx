@@ -47,8 +47,12 @@ export function ProvisionAgentDialog({ open, onOpenChange }: Props) {
   )
 
   useEffect(() => {
-    if (open && typeof window !== 'undefined') {
-      setApiBase(defaultInfrahubApiBase())
+    if (open && typeof window !== 'undefined' && !apiBase) {
+      const { hostname, origin } = window.location
+      // На проде API с того же origin (nginx проксирует /api); localhost пользователь заполняет вручную.
+      if (hostname !== 'localhost' && hostname !== '127.0.0.1') {
+        setApiBase(origin)
+      }
     }
   }, [open])
 
@@ -88,7 +92,7 @@ export function ProvisionAgentDialog({ open, onOpenChange }: Props) {
       ) {
         return Promise.reject(
           new Error(
-            'URL API указывает на localhost, а SSH-хост — удалённый сервер: с него до InfraHub так не подключиться. Укажите адрес API, доступный с целевой машины (публичный IP или DNS и порт, обычно :8080), и откройте порт на файрволе.',
+            'URL API указывает на localhost, а SSH-хост — удалённый сервер: с него до InfraHub так не подключиться. Укажите публичный IP или DNS InfraHub, доступный с целевой машины.',
           ),
         )
       }
@@ -178,7 +182,7 @@ export function ProvisionAgentDialog({ open, onOpenChange }: Props) {
               id={`${baseId}-api`}
               value={apiBase}
               onChange={(e) => setApiBase(e.target.value)}
-              placeholder="https://infrahub.example:8080"
+              placeholder="https://infrahub.example.com"
               autoComplete="off"
             />
             <p className="text-xs text-muted-foreground">

@@ -3,6 +3,7 @@ name = "infrahub-backend"
 version = "0.1.0"
 edition = "2021"
 
+
 [dependencies]
 axum = { version = "0.8", features = ["macros", "json", "ws"] }
 tokio = { version = "1", features = ["full"] }

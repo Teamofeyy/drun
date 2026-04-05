@@ -1,0 +1,10 @@
+.git
+.github
+**/target
+**/node_modules
+frontend/dist
+**/*.md
+.vscode
+.idea
+ansible/.venv
+**/__pycache__
