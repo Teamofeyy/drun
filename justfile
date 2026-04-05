@@ -2,9 +2,12 @@
 dev:
   #!/usr/bin/env bash
   set -euo pipefail
+
   just dev-kill || true
+
   export AGENT_ENROLLMENT_SECRET="${AGENT_ENROLLMENT_SECRET:-dev-enrollment-change-me}"
   export INFRAHUB_ENROLLMENT_SECRET="${INFRAHUB_ENROLLMENT_SECRET:-$AGENT_ENROLLMENT_SECRET}"
+
   cd frontend && npm i && npm run dev &
   cargo run -p infrahub-backend &
   cargo run -p infrahub-agent &
@@ -19,9 +22,12 @@ dev-kill:
 prod:
   #!/usr/bin/env bash
   set -euo pipefail
+
   just dev-kill || true
+
   export AGENT_ENROLLMENT_SECRET="${AGENT_ENROLLMENT_SECRET:-dev-enrollment-change-me}"
   export INFRAHUB_ENROLLMENT_SECRET="${INFRAHUB_ENROLLMENT_SECRET:-$AGENT_ENROLLMENT_SECRET}"
+
   cd frontend && npm i && npm run dev
 
   cargo build -p infrahub-backend --release
