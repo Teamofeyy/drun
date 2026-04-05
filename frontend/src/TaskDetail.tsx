@@ -11,6 +11,7 @@ import {
   CardTitle,
 } from '@/components/ui/card'
 import { TaskResultView } from '@/components/TaskResultView'
+import { useLiveDashboard } from '@/hooks/useLiveDashboard'
 import { api } from './api'
 import { qk } from './queryKeys'
 import { formatDateTime, taskStatusLabel } from './utils/format'
@@ -31,16 +32,13 @@ function statusBadgeVariant(status: string) {
 }
 
 export function TaskDetail() {
+  useLiveDashboard(true)
   const { id } = useParams<{ id: string }>()
 
   const taskQ = useQuery({
     queryKey: qk.task(id ?? ''),
     queryFn: () => api.task(id!),
     enabled: !!id,
-    refetchInterval: (q) => {
-      const st = q.state.data?.status
-      return st === 'pending' || st === 'running' ? 2_500 : false
-    },
   })
 
   const task = taskQ.data

@@ -9,7 +9,7 @@ export function AgentsPage() {
   const agentsQ = useQuery({
     queryKey: qk.agents,
     queryFn: api.agents,
-    refetchInterval: 30_000,
+    refetchInterval: 300_000,
   })
 
   const [selectedIds, setSelectedIds] = useState<string[]>([])

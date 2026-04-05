@@ -35,8 +35,20 @@ export function clearToken() {
   localStorage.removeItem(ROLE_KEY)
 }
 
+function isLoginRequest(path: string, init: RequestInit) {
+  return (
+    path.includes('/api/v1/auth/login') &&
+    (init.method ?? 'GET').toUpperCase() === 'POST'
+  )
+}
+
 async function apiFetch(path: string, init: RequestInit = {}) {
   const token = getToken()
+  if (!token && !isLoginRequest(path, init)) {
+    clearToken()
+    window.location.href = '/'
+    throw new Error('unauthorized')
+  }
   const headers = new Headers(init.headers)
   if (!headers.has('Content-Type')) {
     headers.set('Content-Type', 'application/json')
@@ -63,11 +75,14 @@ async function apiFetch(path: string, init: RequestInit = {}) {
 
 async function apiFetchMaybe(path: string): Promise<unknown | null> {
   const token = getToken()
+  if (!token) {
+    clearToken()
+    window.location.href = '/'
+    throw new Error('unauthorized')
+  }
   const headers = new Headers()
   headers.set('Content-Type', 'application/json')
-  if (token) {
-    headers.set('Authorization', `Bearer ${token}`)
-  }
+  headers.set('Authorization', `Bearer ${token}`)
   const res = await fetch(path, { headers })
   if (res.status === 404) return null
   if (res.status === 401) {

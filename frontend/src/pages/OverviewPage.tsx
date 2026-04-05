@@ -10,8 +10,8 @@ import { api } from '@/api'
 import { qk } from '@/queryKeys'
 
 export function OverviewPage() {
-  const tasksQ = useQuery({ queryKey: qk.tasks, queryFn: api.tasks, refetchInterval: 30_000 })
-  const metricsQ = useQuery({ queryKey: qk.metrics, queryFn: api.metricsSummary, refetchInterval: 60_000 })
+  const tasksQ = useQuery({ queryKey: qk.tasks, queryFn: api.tasks, refetchInterval: 300_000 })
+  const metricsQ = useQuery({ queryKey: qk.metrics, queryFn: api.metricsSummary, refetchInterval: 300_000 })
   const scenariosQ = useQuery({ queryKey: qk.scenarios, queryFn: api.scenarios, refetchInterval: 60_000 })
 
   const recentTasks = (tasksQ.data ?? []).slice(0, 8)

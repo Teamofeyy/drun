@@ -39,6 +39,9 @@ pub struct ProvisionAgentRequest {
     pub private_key_pem: Option<String>,
     #[serde(default)]
     pub ssh_password: Option<String>,
+    /// Если не задан — подставляется `AGENT_ENROLLMENT_SECRET` мастера для `/etc/default/infrahub-agent`
+    #[serde(default)]
+    pub enrollment_secret: Option<String>,
 }
 
 fn default_ssh_port() -> u16 {
@@ -120,6 +123,7 @@ struct ExtraVars {
     infrahub_agent_release_base: String,
     infrahub_agent_install_path: String,
     infrahub_agent_state_dir: String,
+    infrahub_agent_enrollment_secret: String,
 }
 
 #[derive(Debug, Serialize)]
@@ -135,6 +139,13 @@ pub async fn provision_agent(
 ) -> Result<Json<ProvisionAgentResponse>, ApiError> {
     let (_, role) = resolve_session(&state, &headers).await?;
     role.require(UserRole::Operator)?;
+
+    let enrollment_for_ansible = body
+        .enrollment_secret
+        .as_ref()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .unwrap_or_else(|| state.config.agent_enrollment_secret.clone());
 
     let req = validate_provision_request(body, &state.config.default_infrahub_agent_release_base)?;
 
@@ -155,6 +166,7 @@ pub async fn provision_agent(
         infrahub_agent_release_base: req.infrahub_agent_release_base.clone(),
         infrahub_agent_install_path: "/usr/local/bin/infrahub-agent".into(),
         infrahub_agent_state_dir: "/var/lib/infrahub-agent".into(),
+        infrahub_agent_enrollment_secret: enrollment_for_ansible,
     };
 
     let run_result = run_ansible_playbook(

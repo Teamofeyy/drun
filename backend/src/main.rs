@@ -10,6 +10,7 @@ mod machine_diff;
 mod models;
 mod provisioning;
 mod queue;
+mod realtime;
 mod roles;
 mod session;
 mod state;
@@ -18,11 +19,13 @@ mod token;
 mod topology;
 
 use std::sync::Arc;
+use std::time::Duration;
 
 use axum::{
     routing::{get, patch, post},
     Router,
 };
+use tokio::sync::broadcast;
 use tower_http::{cors::CorsLayer, trace::TraceLayer};
 
 #[tokio::main]
@@ -45,11 +48,22 @@ async fn main() -> anyhow::Result<()> {
     let client = redis::Client::open(cfg.redis_url.as_str())?;
     let redis = redis::aio::ConnectionManager::new(client).await?;
 
-    let state = state::AppState {
+    let (dashboard_tx, _) = broadcast::channel::<()>(256);
+    let dashboard_wake = Arc::new(tokio::sync::Notify::new());
+    let debounce = Duration::from_millis(cfg.dashboard_notify_debounce_ms);
+    state::spawn_dashboard_fanout_task(
+        dashboard_tx.clone(),
+        Arc::clone(&dashboard_wake),
+        debounce,
+    );
+    let state = state::AppState::new(
         db,
         redis,
-        config: cfg,
-    };
+        cfg,
+        dashboard_tx,
+        dashboard_wake,
+        state::AgentWsRegistry::new(),
+    );
 
     let app = Router::new()
         .route("/health", get(handlers::health))
@@ -57,6 +71,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/v1/me", get(handlers::current_user))
         .route("/api/v1/agent/register", post(handlers::register_agent))
         .route("/api/v1/agent/heartbeat", post(handlers::agent_heartbeat))
+        .route("/api/v1/agent/ws", get(realtime::agent_ws_upgrade))
         .route("/api/v1/agent/tasks/next", get(handlers::agent_next_task))
         .route(
             "/api/v1/agent/tasks/{id}/complete",

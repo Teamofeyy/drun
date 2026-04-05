@@ -84,6 +84,11 @@ pub async fn create_task(
         .map_err(|_| ApiError::new(StatusCode::INTERNAL_SERVER_ERROR, "database error"))?
         .ok_or_else(|| ApiError::new(StatusCode::INTERNAL_SERVER_ERROR, "task row missing"))?;
 
+    state.notify_dashboard();
+    if let Err(e) = super::try_push_next_task_ws(&state, body.agent_id).await {
+        tracing::warn!(error = %e, "ws push after create_task");
+    }
+
     Ok(Json(task.into()))
 }
 

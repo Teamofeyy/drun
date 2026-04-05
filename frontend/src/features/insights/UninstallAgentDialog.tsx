@@ -83,9 +83,6 @@ export function UninstallAgentDialog({ open, onOpenChange }: Props) {
       void qc.invalidateQueries({ queryKey: qk.agents })
       if (data.ok) {
         toast.success(data.message)
-        onOpenChange(false)
-        setPrivateKey('')
-        setSshPassword('')
       } else {
         toast.error(data.message)
       }
@@ -216,40 +213,92 @@ export function UninstallAgentDialog({ open, onOpenChange }: Props) {
               </div>
             )}
           </fieldset>
-          {lastResult && !lastResult.ok && (
-            <div className="space-y-2 rounded-md border border-destructive/40 bg-destructive/5 p-3 text-sm">
-              <p className="font-medium text-destructive">
-                Код: {lastResult.exit_code ?? '—'}
+          {(run.isPending || lastResult) && (
+            <div
+              className={cn(
+                'space-y-3 rounded-md border p-3 text-sm',
+                run.isPending && 'border-border bg-muted/20',
+                lastResult &&
+                  (lastResult.ok
+                    ? 'border-green-600/35 bg-green-500/5 dark:border-green-500/30'
+                    : 'border-destructive/40 bg-destructive/5'),
+              )}
+              aria-live="polite"
+            >
+              <p className="text-xs font-medium text-muted-foreground">
+                Состояние (ansible-playbook)
               </p>
-              {lastResult.stderr ? (
-                <pre className="max-h-40 overflow-auto whitespace-pre-wrap break-all font-mono text-xs">
-                  {lastResult.stderr}
-                </pre>
+              {run.isPending ? (
+                <p className="text-sm text-muted-foreground">
+                  Выполняется playbook снятия агента. Вывод появится здесь после завершения.
+                </p>
               ) : null}
-              {lastResult.stdout ? (
-                <pre className="max-h-32 overflow-auto whitespace-pre-wrap break-all font-mono text-xs text-muted-foreground">
-                  {lastResult.stdout}
-                </pre>
+              {lastResult ? (
+                <>
+                  <p
+                    className={cn(
+                      'font-medium',
+                      lastResult.ok
+                        ? 'text-green-800 dark:text-green-400'
+                        : 'text-destructive',
+                    )}
+                  >
+                    {lastResult.ok ? 'Готово' : 'Ошибка'} · код выхода:{' '}
+                    {lastResult.exit_code ?? '—'} · {lastResult.message}
+                  </p>
+                  {lastResult.stderr ? (
+                    <div className="space-y-1">
+                      <p className="text-xs font-medium text-muted-foreground">stderr</p>
+                      <pre className="max-h-48 overflow-auto whitespace-pre-wrap break-all rounded border border-border bg-background/80 p-2 font-mono text-xs">
+                        {lastResult.stderr}
+                      </pre>
+                    </div>
+                  ) : null}
+                  {lastResult.stdout ? (
+                    <div className="space-y-1">
+                      <p className="text-xs font-medium text-muted-foreground">
+                        stdout (вывод ansible)
+                      </p>
+                      <pre className="max-h-64 overflow-auto whitespace-pre-wrap break-all rounded border border-border bg-background/80 p-2 font-mono text-xs">
+                        {lastResult.stdout}
+                      </pre>
+                    </div>
+                  ) : null}
+                  {!lastResult.stderr && !lastResult.stdout ? (
+                    <p className="text-xs text-muted-foreground">Вывод пустой.</p>
+                  ) : null}
+                </>
               ) : null}
             </div>
           )}
         </div>
         <DialogFooter>
-          <Button
-            type="button"
-            variant="outline"
-            onClick={() => onOpenChange(false)}
-          >
-            Отмена
-          </Button>
-          <Button
-            type="button"
-            variant="destructive"
-            disabled={run.isPending}
-            onClick={() => run.mutate()}
-          >
-            {run.isPending ? 'Выполняется…' : 'Снять агента'}
-          </Button>
+          {lastResult?.ok ? (
+            <Button
+              type="button"
+              onClick={() => {
+                setPrivateKey('')
+                setSshPassword('')
+                onOpenChange(false)
+              }}
+            >
+              Закрыть
+            </Button>
+          ) : (
+            <>
+              <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
+                Отмена
+              </Button>
+              <Button
+                type="button"
+                variant="destructive"
+                disabled={run.isPending}
+                onClick={() => run.mutate()}
+              >
+                {run.isPending ? 'Выполняется ansible-playbook…' : 'Снять агента'}
+              </Button>
+            </>
+          )}
         </DialogFooter>
       </DialogContent>
     </Dialog>

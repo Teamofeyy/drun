@@ -556,7 +556,7 @@ export function TopologyPanel() {
   const graphQ = useQuery({
     queryKey: qk.topology,
     queryFn: api.topologyGraph,
-    refetchInterval: 15_000,
+    refetchInterval: 300_000,
     select: (raw) => normalizeTopologyGraph(raw as unknown),
   })
 
@@ -566,7 +566,6 @@ export function TopologyPanel() {
   )
 
   const legend = topologyHeaderLegend(model)
-  const showRefreshing = graphQ.isFetching && !graphQ.isPending
 
   return (
     <Card>
@@ -611,7 +610,6 @@ export function TopologyPanel() {
           model,
           showProbes,
           setShowProbes,
-          showRefreshing,
           operate,
           () => setProvisionOpen(true),
           () => setUninstallOpen(true),
@@ -626,7 +624,6 @@ function renderTopologyToolbar(
   model: TopologyPanelModel,
   showProbes: boolean,
   setShowProbes: (v: boolean) => void,
-  showRefreshing: boolean,
   operate: boolean,
   onOpenProvision: () => void,
   onOpenUninstall: () => void,
@@ -699,9 +696,6 @@ function renderTopologyToolbar(
           </code>{' '}
           появятся жёлтые узлы и переключатель «упростить граф».
         </p>
-      )}
-      {showRefreshing && (
-        <span className="text-xs text-muted-foreground">Обновление…</span>
       )}
     </div>
   )

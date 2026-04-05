@@ -102,12 +102,12 @@ export function ScenariosPage() {
   const scenariosQ = useQuery({
     queryKey: qk.scenarios,
     queryFn: api.scenarios,
-    refetchInterval: 60_000,
+    refetchInterval: 300_000,
   })
   const agentsQ = useQuery({
     queryKey: qk.agents,
     queryFn: api.agents,
-    refetchInterval: 30_000,
+    refetchInterval: 300_000,
   })
 
   const scenarios = scenariosQ.data ?? []

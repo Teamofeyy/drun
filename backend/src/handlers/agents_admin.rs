@@ -82,6 +82,8 @@ pub async fn patch_agent(
         .await
         .map_err(|_| ApiError::new(StatusCode::INTERNAL_SERVER_ERROR, "database error"))?;
 
+    state.notify_dashboard();
+
     Ok(Json(AgentPublic {
         id,
         name,

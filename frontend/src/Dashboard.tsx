@@ -63,19 +63,19 @@ export function Dashboard() {
   const agentsQ = useQuery({
     queryKey: qk.agents,
     queryFn: api.agents,
-    refetchInterval: 30_000,
+    refetchInterval: 300_000,
   })
 
   const tasksQ = useQuery({
     queryKey: qk.tasks,
     queryFn: api.tasks,
-    refetchInterval: 30_000,
+    refetchInterval: 300_000,
   })
 
   const metricsQ = useQuery({
     queryKey: qk.metrics,
     queryFn: api.metricsSummary,
-    refetchInterval: 60_000,
+    refetchInterval: 300_000,
   })
 
   const agents = useMemo(() => agentsQ.data ?? [], [agentsQ.data])
@@ -142,7 +142,7 @@ export function Dashboard() {
   return (
     <AppShell
       title="InfraHub"
-      subtitle="Панель управления агентами: проверки, аналитика, топология и экспорт. Live SSE ~2 с + polling."
+      subtitle="Панель управления агентами: проверки, аналитика, топология и экспорт. Обновления по SSE при событиях; редкий опрос — подстраховка."
       actions={
         <div className="flex flex-wrap items-center gap-2">
           {role && (

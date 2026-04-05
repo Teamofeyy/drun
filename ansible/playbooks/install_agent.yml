@@ -8,9 +8,17 @@
   vars:
     infrahub_agent_install_path: /usr/local/bin/infrahub-agent
     infrahub_agent_state_dir: /var/lib/infrahub-agent
+    # Обязателен (совпадает с AGENT_ENROLLMENT_SECRET на мастере); provision-agent передаёт через extra_vars
+    infrahub_agent_enrollment_secret: ""
     # Меньше шума в логах (интерпретатор на ноде).
     ansible_python_interpreter: auto_silent
   tasks:
+    - name: Require infrahub_agent_enrollment_secret
+      ansible.builtin.fail:
+        msg: >-
+          Задайте extra-var infrahub_agent_enrollment_secret (тот же секрет, что AGENT_ENROLLMENT_SECRET на мастере).
+      when: infrahub_agent_enrollment_secret is not defined or (infrahub_agent_enrollment_secret | default('') | trim | length == 0)
+
     - name: Ensure state directory exists
       ansible.builtin.file:
         path: "{{ infrahub_agent_state_dir }}"

@@ -13,8 +13,8 @@ export function RunsPage() {
   const qc = useQueryClient()
   const { selectedAgentId, setSelectedAgentId, kind, payloadText, maxRetries } = useTaskComposerStore()
 
-  const agentsQ = useQuery({ queryKey: qk.agents, queryFn: api.agents, refetchInterval: 30_000 })
-  const tasksQ = useQuery({ queryKey: qk.tasks, queryFn: api.tasks, refetchInterval: 30_000 })
+  const agentsQ = useQuery({ queryKey: qk.agents, queryFn: api.agents, refetchInterval: 300_000 })
+  const tasksQ = useQuery({ queryKey: qk.tasks, queryFn: api.tasks, refetchInterval: 300_000 })
 
   const agents = agentsQ.data ?? []
 

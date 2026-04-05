@@ -5,7 +5,8 @@ export const queryClient = new QueryClient({
     queries: {
       staleTime: 8_000,
       retry: 1,
-      refetchOnWindowFocus: true,
+      // Обновления по SSE + инвалидации; без пачки GET при каждом фокусе вкладки
+      refetchOnWindowFocus: false,
     },
     mutations: {
       retry: 0,

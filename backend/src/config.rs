@@ -14,6 +14,10 @@ pub struct Config {
     pub provision_timeout_secs: u64,
     /// Дефолт каталога URL релиза агента (GET /admin/provision-agent-defaults и fallback в POST, если поле не прислали)
     pub default_infrahub_agent_release_base: String,
+    /// Общий секрет для `POST /api/v1/agent/register` (обязателен, непустой)
+    pub agent_enrollment_secret: String,
+    /// Схлопывание `notify_dashboard` перед fan-out в SSE (мс)
+    pub dashboard_notify_debounce_ms: u64,
 }
 
 impl Config {
@@ -46,6 +50,20 @@ impl Config {
                 })
                 .trim_end_matches('/')
                 .to_string(),
+            agent_enrollment_secret: {
+                let s = env::var("AGENT_ENROLLMENT_SECRET")
+                    .map_err(|_| anyhow::anyhow!("AGENT_ENROLLMENT_SECRET is required"))?;
+                let s = s.trim().to_string();
+                if s.is_empty() {
+                    anyhow::bail!("AGENT_ENROLLMENT_SECRET must be non-empty");
+                }
+                s
+            },
+            dashboard_notify_debounce_ms: env::var("DASHBOARD_NOTIFY_DEBOUNCE_MS")
+                .ok()
+                .and_then(|s| s.parse().ok())
+                .unwrap_or(250)
+                .clamp(50, 2000),
         })
     }
 }

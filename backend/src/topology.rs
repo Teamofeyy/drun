@@ -1,7 +1,7 @@
 //! Топология для UI: что реально известно системе.
 //!
 //! - **Платформа** — единый узел InfraHub (REST + SSE). Агенты **не ходят друг к другу**
-//!   через нас: только **к платформе** (heartbeat, выдача задач, complete/fail).
+//!   через нас: только **к платформе** (WebSocket + heartbeat JSON, опциональный HTTP poll задач, complete/fail).
 //! - **Метаданные** — связи агента с площадкой/сегментом (логическая группировка).
 //! - **Наблюдаемые проверки** — из результатов `port_check` / `network_reachability`:
 //!   это «агент пробовал достучаться до хоста:порт», а не обмен пакетами между агентами.
@@ -88,7 +88,7 @@ pub async fn topology_graph(
         "id": PLATFORM_ID,
         "label": "InfraHub",
         "type": "platform",
-        "sub": "REST API · очередь задач · SSE",
+        "sub": "REST API · WebSocket агентов · SSE дашборда",
     }));
 
     let mut site_ids: HashSet<String> = HashSet::new();
@@ -134,7 +134,9 @@ pub async fn topology_graph(
             "target": PLATFORM_ID,
             "kind": "control_plane",
             "category": "control_plane",
-            "detail": format!("status={agent_status}; heartbeat, poll задач, complete/fail"),
+            "detail": format!(
+                "status={agent_status}; WebSocket, редкий HTTP fallback к задачам, complete/fail"
+            ),
         }));
 
         let s = a.site.trim();

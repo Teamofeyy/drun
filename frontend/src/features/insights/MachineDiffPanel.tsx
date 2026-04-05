@@ -34,7 +34,12 @@ const NO_TASK = '__infrahub_diff_no_task__'
 
 export function MachineDiffPanel() {
   const agentsQ = useQuery({ queryKey: qk.agents, queryFn: api.agents })
-  const tasksQ = useQuery({ queryKey: qk.tasks, queryFn: api.tasks })
+  const tasksQ = useQuery({
+    queryKey: qk.tasks,
+    queryFn: api.tasks,
+    /** На топологии SSE реже инвалидирует tasks (только при pending/running в снимке). */
+    staleTime: 120_000,
+  })
 
   const [agentId, setAgentId] = useState<string>('')
   const [fromId, setFromId] = useState<string>('')

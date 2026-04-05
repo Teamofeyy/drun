@@ -42,7 +42,7 @@ function AgentCard({ agent }: { agent: Agent }) {
 }
 
 export function AgentStatusGrid() {
-  const agentsQ = useQuery({ queryKey: qk.agents, queryFn: api.agents, refetchInterval: 15_000 })
+  const agentsQ = useQuery({ queryKey: qk.agents, queryFn: api.agents, refetchInterval: 300_000 })
   const agents = (agentsQ.data ?? []).slice(0, 9)
 
   return (
