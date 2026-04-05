@@ -1,3 +1,5 @@
+#![cfg_attr(target_os = "windows", windows_subsystem = "windows")]
+
 mod checks;
 mod client;
 mod state_file;
@@ -66,14 +68,14 @@ async fn main() -> anyhow::Result<()> {
     };
 
     if freshly_registered {
-        eprintln!(
+        tracing::info!(
             "Зарегистрирован агент «{}» (id: {})\nУчётные данные: {}",
             state.name,
             state.agent_id,
             path.display()
         );
     } else {
-        eprintln!(
+        tracing::info!(
             "Подключение как «{}» (id: {}), {}",
             state.name,
             state.agent_id,
