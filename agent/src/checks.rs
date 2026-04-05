@@ -320,7 +320,7 @@ async fn agent_self_update(payload: &Value) -> Result<CheckOutput, CheckError> {
         .ok()
         .map(|s| s.trim().to_string())
         .filter(|s| !s.is_empty())
-        .or_else(|| System::cpu_arch())
+        .or_else(System::cpu_arch)
         .unwrap_or_else(|| "unknown".into());
 
     let basename = musl_download_basename(&arch_raw).ok_or_else(|| {
