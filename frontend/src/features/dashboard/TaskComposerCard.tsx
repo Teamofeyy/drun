@@ -24,6 +24,9 @@ import {
   TASK_KINDS,
   type TaskKind,
 } from '@/features/taskComposer/presets'
+
+/** Стабильное значение Radix Select при отсутствии агентов (всегда controlled). */
+const NO_AGENTS_VALUE = '__infrahub_no_agents__'
 import { useTaskComposerStore } from '@/stores/taskComposerStore'
 import type { Agent } from '@/api'
 import { Download, FileJson, Upload } from 'lucide-react'
@@ -119,19 +122,33 @@ export function TaskComposerCard({
             <div className="space-y-2">
               <Label htmlFor="agent">Агент</Label>
               <Select
-                value={agentId || undefined}
-                onValueChange={(v) => setSelectedAgentId(v)}
+                value={
+                  agents.length === 0
+                    ? NO_AGENTS_VALUE
+                    : agents.some((a) => a.id === agentId)
+                      ? agentId
+                      : agents[0]!.id
+                }
+                onValueChange={(v) => {
+                  if (v !== NO_AGENTS_VALUE) setSelectedAgentId(v)
+                }}
                 disabled={agents.length === 0}
               >
                 <SelectTrigger id="agent">
                   <SelectValue placeholder="Нет агентов" />
                 </SelectTrigger>
                 <SelectContent>
-                  {agents.map((a) => (
-                    <SelectItem key={a.id} value={a.id}>
-                      {a.name}
+                  {agents.length === 0 ? (
+                    <SelectItem value={NO_AGENTS_VALUE} disabled>
+                      Нет агентов
                     </SelectItem>
-                  ))}
+                  ) : (
+                    agents.map((a) => (
+                      <SelectItem key={a.id} value={a.id}>
+                        {a.name}
+                      </SelectItem>
+                    ))
+                  )}
                 </SelectContent>
               </Select>
             </div>

@@ -10,6 +10,8 @@ pub struct Config {
     pub bind: String,
     /// Сколько задач одновременно может быть в статусе running на одном агенте
     pub agent_max_concurrent_tasks: i64,
+    /// Таймаут `ansible-playbook` для provision-agent (секунды)
+    pub provision_timeout_secs: u64,
 }
 
 impl Config {
@@ -31,6 +33,11 @@ impl Config {
                 .and_then(|s| s.parse().ok())
                 .unwrap_or(1)
                 .max(1),
+            provision_timeout_secs: env::var("INFRAHUB_PROVISION_TIMEOUT_SECS")
+                .ok()
+                .and_then(|s| s.parse().ok())
+                .unwrap_or(1800)
+                .clamp(60, 7200),
         })
     }
 }

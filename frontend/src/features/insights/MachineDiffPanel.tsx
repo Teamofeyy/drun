@@ -29,6 +29,9 @@ import { api } from '@/api'
 import { qk } from '@/queryKeys'
 import { formatDateTime } from '@/utils/format'
 
+const NO_AGENT = '__infrahub_diff_no_agent__'
+const NO_TASK = '__infrahub_diff_no_task__'
+
 export function MachineDiffPanel() {
   const agentsQ = useQuery({ queryKey: qk.agents, queryFn: api.agents })
   const tasksQ = useQuery({ queryKey: qk.tasks, queryFn: api.tasks })
@@ -65,8 +68,9 @@ export function MachineDiffPanel() {
           <div className="space-y-2">
             <Label>Агент</Label>
             <Select
-              value={agentId || undefined}
+              value={agentId === '' ? NO_AGENT : agentId}
               onValueChange={(v) => {
+                if (v === NO_AGENT) return
                 setAgentId(v)
                 setFromId('')
                 setToId('')
@@ -76,6 +80,9 @@ export function MachineDiffPanel() {
                 <SelectValue placeholder="Выберите агента" />
               </SelectTrigger>
               <SelectContent>
+                <SelectItem value={NO_AGENT} disabled>
+                  Выберите агента
+                </SelectItem>
                 {(agentsQ.data ?? []).map((a) => (
                   <SelectItem key={a.id} value={a.id}>
                     {a.name}
@@ -87,14 +94,17 @@ export function MachineDiffPanel() {
           <div className="space-y-2">
             <Label>Ранний снимок</Label>
             <Select
-              value={fromId || undefined}
-              onValueChange={setFromId}
+              value={fromId === '' ? NO_TASK : fromId}
+              onValueChange={(v) => v !== NO_TASK && setFromId(v)}
               disabled={!agentId || systemTasks.length < 2}
             >
               <SelectTrigger>
                 <SelectValue placeholder="Задача" />
               </SelectTrigger>
               <SelectContent>
+                <SelectItem value={NO_TASK} disabled>
+                  Задача
+                </SelectItem>
                 {systemTasks.map((t) => (
                   <SelectItem key={t.id} value={t.id}>
                     {formatDateTime(t.created_at)} · {t.id.slice(0, 8)}…
@@ -106,14 +116,17 @@ export function MachineDiffPanel() {
           <div className="space-y-2">
             <Label>Поздний снимок</Label>
             <Select
-              value={toId || undefined}
-              onValueChange={setToId}
+              value={toId === '' ? NO_TASK : toId}
+              onValueChange={(v) => v !== NO_TASK && setToId(v)}
               disabled={!agentId || systemTasks.length < 2}
             >
               <SelectTrigger>
                 <SelectValue placeholder="Задача" />
               </SelectTrigger>
               <SelectContent>
+                <SelectItem value={NO_TASK} disabled>
+                  Задача
+                </SelectItem>
                 {systemTasks.map((t) => (
                   <SelectItem key={t.id} value={t.id}>
                     {formatDateTime(t.created_at)} · {t.id.slice(0, 8)}…

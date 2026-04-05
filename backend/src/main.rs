@@ -8,6 +8,7 @@ mod export;
 mod handlers;
 mod machine_diff;
 mod models;
+mod provisioning;
 mod queue;
 mod roles;
 mod session;
@@ -87,6 +88,14 @@ async fn main() -> anyhow::Result<()> {
         .route(
             "/api/v1/admin/clear-task-history",
             post(admin_api::wipe_task_history),
+        )
+        .route(
+            "/api/v1/admin/provision-agent",
+            post(provisioning::provision_agent),
+        )
+        .route(
+            "/api/v1/admin/uninstall-agent",
+            post(provisioning::uninstall_agent),
         )
         .layer(CorsLayer::permissive())
         .layer(TraceLayer::new_for_http())
