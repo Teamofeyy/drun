@@ -9,7 +9,7 @@ use std::path::PathBuf;
 use clap::Parser;
 use state_file::{normalize_server, AgentState};
 
-/// Подключается к платформе: при первом запуске регистрируется и сохраняет токен локально.
+/// Подключается к платформе: при первом запуске регистрируется (нужен INFRAHUB_ENROLLMENT_SECRET) и сохраняет токен локально.
 #[derive(Parser)]
 #[command(name = "infrahub-agent")]
 #[command(about = "InfraHub agent: auto-register, heartbeat, whitelist checks only")]
@@ -28,6 +28,14 @@ struct Cli {
 
     #[arg(long, default_value = "10", env = "INFRAHUB_HEARTBEAT_SECS")]
     heartbeat_secs: u64,
+
+    /// Интервал HTTP GET /agent/tasks/next при открытом WebSocket (запасной канал). 0 — только push по WS.
+    #[arg(long, default_value = "60", env = "INFRAHUB_POLL_FALLBACK_SECS")]
+    poll_fallback_secs: u64,
+
+    /// Секрет для первичной регистрации на мастере (env INFRAHUB_ENROLLMENT_SECRET)
+    #[arg(long, env = "INFRAHUB_ENROLLMENT_SECRET")]
+    enrollment_secret: Option<String>,
 
     /// Заново зарегистрироваться (новый токен), даже если есть сохранённый
     #[arg(long)]
@@ -58,13 +66,16 @@ async fn main() -> anyhow::Result<()> {
                 (st, false)
             } else {
                 tracing::info!("Сохранённый server не совпадает — новая регистрация");
-                register_and_save(&path, &server_n, &display_name).await?
+                let enrollment = enrollment_for_register(&cli)?;
+                register_and_save(&path, &server_n, &display_name, &enrollment).await?
             }
         } else {
-            register_and_save(&path, &server_n, &display_name).await?
+            let enrollment = enrollment_for_register(&cli)?;
+            register_and_save(&path, &server_n, &display_name, &enrollment).await?
         }
     } else {
-        register_and_save(&path, &server_n, &display_name).await?
+        let enrollment = enrollment_for_register(&cli)?;
+        register_and_save(&path, &server_n, &display_name, &enrollment).await?
     };
 
     if freshly_registered {
@@ -83,15 +94,36 @@ async fn main() -> anyhow::Result<()> {
         );
     }
 
-    client::run_loop(&state.server, &state.token, cli.heartbeat_secs).await
+    client::run_loop(
+        &state.server,
+        &state.token,
+        cli.heartbeat_secs,
+        cli.poll_fallback_secs,
+    )
+    .await
+}
+
+fn enrollment_for_register(cli: &Cli) -> anyhow::Result<String> {
+    let s = cli
+        .enrollment_secret
+        .as_ref()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .ok_or_else(|| {
+            anyhow::anyhow!(
+                "нужен секрет регистрации: задайте INFRAHUB_ENROLLMENT_SECRET или --enrollment-secret"
+            )
+        })?;
+    Ok(s)
 }
 
 async fn register_and_save(
     path: &std::path::Path,
     server: &str,
     name: &str,
+    enrollment_secret: &str,
 ) -> anyhow::Result<(AgentState, bool)> {
-    let res = client::register(server, name).await?;
+    let res = client::register(server, name, enrollment_secret).await?;
     let state = AgentState {
         server: server.to_string(),
         agent_id: res.agent_id,

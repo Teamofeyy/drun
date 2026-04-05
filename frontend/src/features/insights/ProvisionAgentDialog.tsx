@@ -1,7 +1,12 @@
-import { useMutation, useQueryClient } from '@tanstack/react-query'
+import {
+  useMutation,
+  useQuery,
+  useQueryClient,
+} from '@tanstack/react-query'
 import { useEffect, useId, useState } from 'react'
 import { toast } from 'sonner'
 import {
+  fetchProvisionAgentDefaults,
   provisionAgent,
   type ProvisionAgentRequest,
   type ProvisionAgentResponse,
@@ -18,7 +23,9 @@ import {
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
+import { defaultInfrahubApiBase } from '@/lib/defaultInfrahubApiBase'
 import { qk } from '@/queryKeys'
+import { cn } from '@/lib/utils'
 
 type Props = {
   open: boolean
@@ -47,7 +54,13 @@ export function ProvisionAgentDialog({ open, onOpenChange }: Props) {
         setApiBase(origin)
       }
     }
-  }, [open, apiBase])
+  }, [open])
+
+  const releaseDefaults = useQuery({
+    queryKey: qk.provisionAgentDefaults,
+    queryFn: fetchProvisionAgentDefaults,
+    enabled: open,
+  })
 
   useEffect(() => {
     if (!open) return
@@ -104,9 +117,6 @@ export function ProvisionAgentDialog({ open, onOpenChange }: Props) {
       void qc.invalidateQueries({ queryKey: qk.agents })
       if (data.ok) {
         toast.success(data.message)
-        onOpenChange(false)
-        setPrivateKey('')
-        setSshPassword('')
       } else {
         toast.error(data.message)
       }
@@ -124,13 +134,11 @@ export function ProvisionAgentDialog({ open, onOpenChange }: Props) {
           <DialogTitle>Установить агента по SSH</DialogTitle>
           <DialogDescription>
             Данные и ключ отправляются один раз на сервер InfraHub и не
-            сохраняются. Бинарь агента копируется с машины backend из сборки
-            workspace (<code className="text-xs">target/…/infrahub-agent</code>
-            ). Нужны <code className="text-xs">ansible-core</code> и SSH с
-            backend до целевого хоста. Имя агента при регистрации берётся с ноды
-            (короткое имя хоста после{' '}
-            <code className="text-xs">gather_facts</code>,{' '}
-            <code className="text-xs">ansible_hostname</code>).
+            сохраняются. Бинарь агента скачивается на ноду с GitHub Releases
+            (nightly musl по <code className="text-xs">ansible_architecture</code>
+            : x86_64 / aarch64). Нужны <code className="text-xs">ansible-core</code>{' '}
+            и исходящий доступ с ноды к GitHub. Имя агента —{' '}
+            <code className="text-xs">ansible_hostname</code> с ноды.
           </DialogDescription>
         </DialogHeader>
         <div className="grid gap-4 py-2">
@@ -178,12 +186,28 @@ export function ProvisionAgentDialog({ open, onOpenChange }: Props) {
               autoComplete="off"
             />
             <p className="text-xs text-muted-foreground">
-              Адрес HTTP API InfraHub так, как его должен открыть{' '}
-              <strong>целевой сервер</strong> (не localhost с его стороны). Пример:{' '}
-              <code className="rounded bg-muted px-1 py-0.5 text-[0.65rem]">
-                https://infrahub.example.com
+              Подставляется автоматически (порт <strong>8080</strong>, не Vite).
+              Для удалённой ноды замените на адрес API, доступный <em>с той машины</em>.
+            </p>
+          </div>
+          <div className="space-y-2 rounded-md border border-border bg-muted/30 px-3 py-2">
+            <p className="text-sm font-medium">Каталог URL релиза агента (GitHub)</p>
+            {releaseDefaults.isPending ? (
+              <p className="text-xs text-muted-foreground">Загрузка…</p>
+            ) : releaseDefaults.isError ? (
+              <p className="text-xs text-destructive">
+                Не удалось получить настройки с сервера
+              </p>
+            ) : (
+              <code className="break-all text-xs">
+                {releaseDefaults.data?.infrahub_agent_release_base}
               </code>
-              . Если UI открыт с localhost — поле нужно заполнить вручную.
+            )}
+            <p className="text-xs text-muted-foreground">
+              Задаётся на сервере InfraHub (
+              <code className="rounded bg-muted px-1">INFRAHUB_AGENT_RELEASE_BASE</code>
+              ). Ansible собирает URL бинаря по{' '}
+              <code className="rounded bg-muted px-1">ansible_architecture</code>.
             </p>
           </div>
           <fieldset className="space-y-3 rounded-md border border-border p-3">
@@ -223,14 +247,10 @@ export function ProvisionAgentDialog({ open, onOpenChange }: Props) {
                   autoComplete="off"
                 />
                 <p className="text-xs text-muted-foreground">
-                  <strong className="font-medium text-foreground/90">Как получить:</strong> скопируйте
-                  целиком <em>приватный</em> файл (без <code className="rounded bg-muted px-1">.pub</code>
-                  ), чаще всего{' '}
-                  <code className="rounded bg-muted px-1">~/.ssh/id_ed25519</code> или{' '}
-                  <code className="rounded bg-muted px-1">id_rsa</code> — например{' '}
-                  <code className="rounded bg-muted px-1">cat ~/.ssh/id_ed25519</code>. На ноде в{' '}
-                  <code className="rounded bg-muted px-1">authorized_keys</code> должен быть парный{' '}
-                  <em>публичный</em> ключ.
+                  Обычно <code className="rounded bg-muted px-1">cat ~/.ssh/id_ed25519</code> (без{' '}
+                  <code className="rounded bg-muted px-1">.pub</code>); на ноде — ваш{' '}
+                  <code className="rounded bg-muted px-1">.pub</code> в{' '}
+                  <code className="rounded bg-muted px-1">authorized_keys</code>.
                 </p>
               </div>
             ) : (
@@ -246,39 +266,92 @@ export function ProvisionAgentDialog({ open, onOpenChange }: Props) {
               </div>
             )}
           </fieldset>
-          {lastResult && !lastResult.ok && (
-            <div className="space-y-2 rounded-md border border-destructive/40 bg-destructive/5 p-3 text-sm">
-              <p className="font-medium text-destructive">
-                Код: {lastResult.exit_code ?? '—'}
+          {(provision.isPending || lastResult) && (
+            <div
+              className={cn(
+                'space-y-3 rounded-md border p-3 text-sm',
+                provision.isPending && 'border-border bg-muted/20',
+                lastResult &&
+                  (lastResult.ok
+                    ? 'border-green-600/35 bg-green-500/5 dark:border-green-500/30'
+                    : 'border-destructive/40 bg-destructive/5'),
+              )}
+              aria-live="polite"
+            >
+              <p className="text-xs font-medium text-muted-foreground">
+                Состояние развёртывания (ansible-playbook)
               </p>
-              {lastResult.stderr ? (
-                <pre className="max-h-40 overflow-auto whitespace-pre-wrap break-all font-mono text-xs">
-                  {lastResult.stderr}
-                </pre>
+              {provision.isPending ? (
+                <p className="text-sm text-muted-foreground">
+                  Выполняется playbook на сервере InfraHub. Потоковой передачи нет — полный вывод
+                  stdout/stderr появится здесь после завершения.
+                </p>
               ) : null}
-              {lastResult.stdout ? (
-                <pre className="max-h-32 overflow-auto whitespace-pre-wrap break-all font-mono text-xs text-muted-foreground">
-                  {lastResult.stdout}
-                </pre>
+              {lastResult ? (
+                <>
+                  <p
+                    className={cn(
+                      'font-medium',
+                      lastResult.ok
+                        ? 'text-green-800 dark:text-green-400'
+                        : 'text-destructive',
+                    )}
+                  >
+                    {lastResult.ok ? 'Готово' : 'Ошибка'} · код выхода:{' '}
+                    {lastResult.exit_code ?? '—'} · {lastResult.message}
+                  </p>
+                  {lastResult.stderr ? (
+                    <div className="space-y-1">
+                      <p className="text-xs font-medium text-muted-foreground">stderr</p>
+                      <pre className="max-h-48 overflow-auto whitespace-pre-wrap break-all rounded border border-border bg-background/80 p-2 font-mono text-xs">
+                        {lastResult.stderr}
+                      </pre>
+                    </div>
+                  ) : null}
+                  {lastResult.stdout ? (
+                    <div className="space-y-1">
+                      <p className="text-xs font-medium text-muted-foreground">
+                        stdout (вывод ansible)
+                      </p>
+                      <pre className="max-h-64 overflow-auto whitespace-pre-wrap break-all rounded border border-border bg-background/80 p-2 font-mono text-xs">
+                        {lastResult.stdout}
+                      </pre>
+                    </div>
+                  ) : null}
+                  {!lastResult.stderr && !lastResult.stdout ? (
+                    <p className="text-xs text-muted-foreground">Вывод пустой.</p>
+                  ) : null}
+                </>
               ) : null}
             </div>
           )}
         </div>
         <DialogFooter>
-          <Button
-            type="button"
-            variant="outline"
-            onClick={() => onOpenChange(false)}
-          >
-            Отмена
-          </Button>
-          <Button
-            type="button"
-            disabled={provision.isPending}
-            onClick={() => provision.mutate()}
-          >
-            {provision.isPending ? 'Выполняется…' : 'Запустить playbook'}
-          </Button>
+          {lastResult?.ok ? (
+            <Button
+              type="button"
+              onClick={() => {
+                setPrivateKey('')
+                setSshPassword('')
+                onOpenChange(false)
+              }}
+            >
+              Закрыть
+            </Button>
+          ) : (
+            <>
+              <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
+                Отмена
+              </Button>
+              <Button
+                type="button"
+                disabled={provision.isPending}
+                onClick={() => provision.mutate()}
+              >
+                {provision.isPending ? 'Выполняется ansible-playbook…' : 'Запустить playbook'}
+              </Button>
+            </>
+          )}
         </DialogFooter>
       </DialogContent>
     </Dialog>

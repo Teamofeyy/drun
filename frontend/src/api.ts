@@ -35,8 +35,20 @@ export function clearToken() {
   localStorage.removeItem(ROLE_KEY)
 }
 
+function isLoginRequest(path: string, init: RequestInit) {
+  return (
+    path.includes('/api/v1/auth/login') &&
+    (init.method ?? 'GET').toUpperCase() === 'POST'
+  )
+}
+
 async function apiFetch(path: string, init: RequestInit = {}) {
   const token = getToken()
+  if (!token && !isLoginRequest(path, init)) {
+    clearToken()
+    window.location.href = '/'
+    throw new Error('unauthorized')
+  }
   const headers = new Headers(init.headers)
   if (!headers.has('Content-Type')) {
     headers.set('Content-Type', 'application/json')
@@ -63,11 +75,14 @@ async function apiFetch(path: string, init: RequestInit = {}) {
 
 async function apiFetchMaybe(path: string): Promise<unknown | null> {
   const token = getToken()
+  if (!token) {
+    clearToken()
+    window.location.href = '/'
+    throw new Error('unauthorized')
+  }
   const headers = new Headers()
   headers.set('Content-Type', 'application/json')
-  if (token) {
-    headers.set('Authorization', `Bearer ${token}`)
-  }
+  headers.set('Authorization', `Bearer ${token}`)
   const res = await fetch(path, { headers })
   if (res.status === 404) return null
   if (res.status === 401) {
@@ -114,14 +129,22 @@ export type ProvisionAgentRequest = {
   ssh_user: string
   ssh_port?: number
   infrahub_api_base: string
+  /** Если не передать — backend подставит значение из конфигурации сервера. */
+  infrahub_agent_release_base?: string | null
   private_key_pem?: string | null
   ssh_password?: string | null
+}
+
+export type ProvisionAgentDefaultsResponse = {
+  infrahub_agent_release_base: string
 }
 
 export type UninstallAgentRequest = {
   host: string
   ssh_user: string
   ssh_port?: number
+  /** Если задан — после успешного снятия с ноды удаляется запись агента (топология обновится). */
+  remove_agent_id?: string | null
   private_key_pem?: string | null
   ssh_password?: string | null
 }
@@ -132,6 +155,11 @@ export type ProvisionAgentResponse = {
   stdout: string
   stderr: string
   message: string
+}
+
+/** Значения по умолчанию для установки агента (каталог релиза задаётся на сервере). */
+export function fetchProvisionAgentDefaults(): Promise<ProvisionAgentDefaultsResponse> {
+  return apiFetch('/api/v1/admin/provision-agent-defaults') as Promise<ProvisionAgentDefaultsResponse>
 }
 
 /** Установка агента по SSH (также доступно как `api.provisionAgent`). */
@@ -165,6 +193,30 @@ export const api = {
   },
   agents() {
     return apiFetch('/api/v1/agents') as Promise<Agent[]>
+  },
+  scenarios() {
+    return apiFetch('/api/v1/scenarios') as Promise<Scenario[]>
+  },
+  scenario(id: string) {
+    return apiFetch(`/api/v1/scenarios/${id}`) as Promise<Scenario>
+  },
+  createScenario(body: ScenarioUpsertBody) {
+    return apiFetch('/api/v1/scenarios', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }) as Promise<Scenario>
+  },
+  runScenario(id: string, body: ScenarioRunBody) {
+    return apiFetch(`/api/v1/scenarios/${id}/run`, {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }) as Promise<Task>
+  },
+  updateScenario(id: string, body: ScenarioUpsertBody) {
+    return apiFetch(`/api/v1/scenarios/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(body),
+    }) as Promise<Scenario>
   },
   patchAgent(
     id: string,
@@ -212,6 +264,7 @@ export const api = {
     return apiFetch('/api/v1/topology/graph') as Promise<TopologyGraph>
   },
   provisionAgent,
+  fetchProvisionAgentDefaults,
   uninstallAgent,
   machineDiff(agentId: string, fromTask: string, toTask: string) {
     return apiFetch(
@@ -257,6 +310,39 @@ export type Agent = {
   site: string
   segment: string
   role_tag: string
+}
+
+export type Scenario = {
+  id: string
+  slug: string
+  name: string
+  description: string
+  tags: string[]
+  definition: unknown
+  input_schema: unknown
+  summary_template: string | null
+  status: string
+  version: number
+  is_preset: boolean
+  created_by: string | null
+  created_at: string
+  updated_at: string
+}
+
+export type ScenarioUpsertBody = {
+  name: string
+  slug?: string
+  description: string
+  tags: string[]
+  definition: unknown
+  input_schema: unknown
+  summary_template: string | null
+  status: string
+}
+
+export type ScenarioRunBody = {
+  agent_id: string
+  inputs: unknown
 }
 
 export type Task = {
@@ -341,6 +427,10 @@ export type TopologyNode = {
   id: string
   label: string
   type: string
+  agent_status?: string
+  hostname?: string
+  primary_ip?: string
+  os_long?: string
   site?: string
   segment?: string
   role_tag?: string

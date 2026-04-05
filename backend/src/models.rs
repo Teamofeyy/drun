@@ -124,6 +124,56 @@ impl From<entity::task_logs::Model> for TaskLogRow {
     }
 }
 
+#[derive(Debug, Clone, Serialize)]
+pub struct ScenarioRow {
+    pub id: Uuid,
+    pub slug: String,
+    pub name: String,
+    pub description: String,
+    pub tags: Vec<String>,
+    pub definition: serde_json::Value,
+    pub input_schema: serde_json::Value,
+    pub summary_template: Option<String>,
+    pub status: String,
+    pub version: i32,
+    pub is_preset: bool,
+    pub created_by: Option<Uuid>,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+impl From<entity::scenarios::Model> for ScenarioRow {
+    fn from(m: entity::scenarios::Model) -> Self {
+        let tags = m
+            .tags
+            .as_array()
+            .map(|items| {
+                items
+                    .iter()
+                    .filter_map(|v| v.as_str().map(ToOwned::to_owned))
+                    .collect()
+            })
+            .unwrap_or_default();
+
+        Self {
+            id: m.id,
+            slug: m.slug,
+            name: m.name,
+            description: m.description,
+            tags,
+            definition: m.definition,
+            input_schema: m.input_schema,
+            summary_template: m.summary_template,
+            status: m.status,
+            version: m.version,
+            is_preset: m.is_preset,
+            created_by: m.created_by,
+            created_at: m.created_at,
+            updated_at: m.updated_at,
+        }
+    }
+}
+
 #[derive(Debug, Deserialize)]
 pub struct LoginRequest {
     pub username: String,
@@ -191,6 +241,52 @@ pub struct PatchAgentRequest {
     pub segment: Option<String>,
     #[serde(default)]
     pub role_tag: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct CreateScenarioRequest {
+    pub name: String,
+    #[serde(default)]
+    pub slug: Option<String>,
+    #[serde(default)]
+    pub description: String,
+    #[serde(default)]
+    pub tags: Vec<String>,
+    #[serde(default)]
+    pub definition: serde_json::Value,
+    #[serde(default)]
+    pub input_schema: serde_json::Value,
+    #[serde(default)]
+    pub summary_template: Option<String>,
+    #[serde(default)]
+    pub status: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct UpdateScenarioRequest {
+    #[serde(default)]
+    pub name: Option<String>,
+    #[serde(default)]
+    pub slug: Option<String>,
+    #[serde(default)]
+    pub description: Option<String>,
+    #[serde(default)]
+    pub tags: Option<Vec<String>>,
+    #[serde(default)]
+    pub definition: Option<serde_json::Value>,
+    #[serde(default)]
+    pub input_schema: Option<serde_json::Value>,
+    #[serde(default)]
+    pub summary_template: Option<Option<String>>,
+    #[serde(default)]
+    pub status: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct RunScenarioRequest {
+    pub agent_id: Uuid,
+    #[serde(default)]
+    pub inputs: serde_json::Value,
 }
 
 #[derive(Debug, Serialize)]

@@ -1,32 +1,13 @@
 # Start all services
 dev:
+  #!/usr/bin/env bash
+  set -euo pipefail
   just dev-kill || true
-
-  just dev-front &
-  just dev-back &
-  just dev-agent &
-
-# Start Frontend
-dev-front:
-  cd frontend && npm i && npm run dev
-
-# Start Master
-# Remote agent install (POST /api/v1/admin/provision-agent): ansible на машине с backend.
-# Варианты: (1) `cd ansible && uv sync` — бинарь будет ansible/.venv/bin/ansible-playbook (подхватится автоматически);
-# (2) INFRAHUB_ANSIBLE_USE_UV=1 и `uv run` из каталога с pyproject (INFRAHUB_UV_PROJECT_DIR, по умолчанию корень репо);
-# (3) INFRAHUB_ANSIBLE_PLAYBOOK=/полный/путь/ansible-playbook.
-# Бинарь для provision: соберите `cargo build -p infrahub-agent` (workspace target/debug|release/infrahub-agent) или задайте INFRAHUB_AGENT_BINARY.
-# INFRAHUB_ANSIBLE_DIR — путь к каталогу ansible в репозитории;
-# INFRAHUB_PROVISION_TIMEOUT_SECS (по умолчанию 1800, clamp 60–7200).
-dev-back:
-  # После добавления API-маршрутов нужен перезапуск именно из `cargo run`/`target/.../infrahub-backend`
-  # со свежей сборкой, иначе новые пути (например provision-agent) дадут 404 на :8080.
-  # Сборка агента нужна для POST /admin/provision-agent (копирование target/*/infrahub-agent).
-  cargo run -p infrahub-backend
-
-# Start Agent
-dev-agent:
-  cargo run -p infrahub-agent
+  export AGENT_ENROLLMENT_SECRET="${AGENT_ENROLLMENT_SECRET:-dev-enrollment-change-me}"
+  export INFRAHUB_ENROLLMENT_SECRET="${INFRAHUB_ENROLLMENT_SECRET:-$AGENT_ENROLLMENT_SECRET}"
+  cd frontend && npm i && npm run dev &
+  cargo run -p infrahub-backend &
+  cargo run -p infrahub-agent &
 
 # Stop all background processes
 dev-kill:
@@ -34,6 +15,20 @@ dev-kill:
   pkill -f '[n]pm run dev' || true
   pkill -f '[c]argo run' || true
   pkill -f '[i]nfrahub-agent' || true
+
+prod:
+  #!/usr/bin/env bash
+  set -euo pipefail
+  just dev-kill || true
+  export AGENT_ENROLLMENT_SECRET="${AGENT_ENROLLMENT_SECRET:-dev-enrollment-change-me}"
+  export INFRAHUB_ENROLLMENT_SECRET="${INFRAHUB_ENROLLMENT_SECRET:-$AGENT_ENROLLMENT_SECRET}"
+  cd frontend && npm i && npm run dev
+
+  cargo build -p infrahub-backend --release
+  cargo build -p infrahub-agent --release
+
+  ./target/release/infrahub-backend
+  ./target/release/infrahub-agent
 
 stats:
   cloc . --vcs=git --not-match-f='package-lock\.json'

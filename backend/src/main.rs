@@ -10,6 +10,7 @@ mod machine_diff;
 mod models;
 mod provisioning;
 mod queue;
+mod realtime;
 mod roles;
 mod session;
 mod state;
@@ -18,11 +19,13 @@ mod token;
 mod topology;
 
 use std::sync::Arc;
+use std::time::Duration;
 
 use axum::{
     routing::{get, patch, post},
     Router,
 };
+use tokio::sync::broadcast;
 use tower_http::{cors::CorsLayer, trace::TraceLayer};
 
 #[tokio::main]
@@ -40,15 +43,27 @@ async fn main() -> anyhow::Result<()> {
     let db: sea_orm::DatabaseConnection = pool.into();
 
     handlers::seed_admin(&db, &cfg.admin_username, &cfg.admin_password).await?;
+    handlers::seed_system_scenarios(&db).await?;
 
     let client = redis::Client::open(cfg.redis_url.as_str())?;
     let redis = redis::aio::ConnectionManager::new(client).await?;
 
-    let state = state::AppState {
+    let (dashboard_tx, _) = broadcast::channel::<()>(256);
+    let dashboard_wake = Arc::new(tokio::sync::Notify::new());
+    let debounce = Duration::from_millis(cfg.dashboard_notify_debounce_ms);
+    state::spawn_dashboard_fanout_task(
+        dashboard_tx.clone(),
+        Arc::clone(&dashboard_wake),
+        debounce,
+    );
+    let state = state::AppState::new(
         db,
         redis,
-        config: cfg,
-    };
+        cfg,
+        dashboard_tx,
+        dashboard_wake,
+        state::AgentWsRegistry::new(),
+    );
 
     let app = Router::new()
         .route("/health", get(handlers::health))
@@ -56,6 +71,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/v1/me", get(handlers::current_user))
         .route("/api/v1/agent/register", post(handlers::register_agent))
         .route("/api/v1/agent/heartbeat", post(handlers::agent_heartbeat))
+        .route("/api/v1/agent/ws", get(realtime::agent_ws_upgrade))
         .route("/api/v1/agent/tasks/next", get(handlers::agent_next_task))
         .route(
             "/api/v1/agent/tasks/{id}/complete",
@@ -66,6 +82,15 @@ async fn main() -> anyhow::Result<()> {
             post(handlers::agent_fail_task),
         )
         .route("/api/v1/agents", get(handlers::list_agents))
+        .route(
+            "/api/v1/scenarios",
+            get(handlers::list_scenarios).post(handlers::create_scenario),
+        )
+        .route(
+            "/api/v1/scenarios/{id}",
+            get(handlers::get_scenario).patch(handlers::update_scenario),
+        )
+        .route("/api/v1/scenarios/{id}/run", post(handlers::run_scenario))
         .route(
             "/api/v1/agents/{id}/machine-diff",
             get(machine_diff::machine_diff_between_tasks),
@@ -88,6 +113,10 @@ async fn main() -> anyhow::Result<()> {
         .route(
             "/api/v1/admin/clear-task-history",
             post(admin_api::wipe_task_history),
+        )
+        .route(
+            "/api/v1/admin/provision-agent-defaults",
+            get(provisioning::provision_agent_defaults),
         )
         .route(
             "/api/v1/admin/provision-agent",

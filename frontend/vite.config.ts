@@ -3,7 +3,10 @@ import tailwindcss from '@tailwindcss/vite'
 import react from '@vitejs/plugin-react'
 import { defineConfig } from 'vite'
 
-/** Прокси на backend; нужен и для `vite dev`, и для `vite preview` (в preview по умолчанию нет proxy). */
+/**
+ * Прокси на backend; нужен и для `vite dev`, и для `vite preview` (в preview по умолчанию нет proxy).
+ * `ws: true` — SSE и WebSocket агента (/api/v1/agent/ws). За nginx/caddy в проде задайте большой read timeout для этих путей.
+ */
 const backendProxy = {
   '/api': {
     target: 'http://127.0.0.1:8080',

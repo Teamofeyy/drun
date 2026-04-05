@@ -51,6 +51,8 @@ pub async fn wipe_task_history(
             ApiError::new(axum::http::StatusCode::INTERNAL_SERVER_ERROR, "redis error")
         })?;
 
+    state.notify_dashboard();
+
     Ok(Json(json!({
         "ok": true,
         "deleted_task_rows": res.rows_affected,

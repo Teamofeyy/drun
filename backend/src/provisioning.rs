@@ -7,11 +7,14 @@ use std::process::Stdio;
 use std::time::Duration;
 
 use axum::{extract::State, http::HeaderMap, Json};
+use sea_orm::EntityTrait;
 use serde::{Deserialize, Serialize};
 use tempfile::TempDir;
 use tokio::process::Command;
+use uuid::Uuid;
 
 use crate::{
+    entity::agents,
     error::ApiError,
     roles::UserRole,
     session::resolve_session,
@@ -29,10 +32,16 @@ pub struct ProvisionAgentRequest {
     pub ssh_port: u16,
     /// URL master API для агента; передаётся в systemd как есть (без подстановок на стороне backend).
     pub infrahub_api_base: String,
+    /// Каталог URL релиза (без завершающего /). Если не указан — `default_infrahub_agent_release_base` из конфига сервера.
+    #[serde(default)]
+    pub infrahub_agent_release_base: Option<String>,
     #[serde(default)]
     pub private_key_pem: Option<String>,
     #[serde(default)]
     pub ssh_password: Option<String>,
+    /// Если не задан — подставляется `AGENT_ENROLLMENT_SECRET` мастера для `/etc/default/infrahub-agent`
+    #[serde(default)]
+    pub enrollment_secret: Option<String>,
 }
 
 fn default_ssh_port() -> u16 {
@@ -46,6 +55,9 @@ pub struct UninstallAgentRequest {
     pub ssh_user: String,
     #[serde(default = "default_ssh_port")]
     pub ssh_port: u16,
+    /// После успешного playbook удалить запись агента (нода исчезнет из топологии).
+    #[serde(default)]
+    pub remove_agent_id: Option<Uuid>,
     #[serde(default)]
     pub private_key_pem: Option<String>,
     #[serde(default)]
@@ -59,6 +71,26 @@ pub struct ProvisionAgentResponse {
     pub stdout: String,
     pub stderr: String,
     pub message: String,
+}
+
+/// Ответ `GET /api/v1/admin/provision-agent-defaults` — дефолт каталога релиза (`INFRAHUB_AGENT_RELEASE_BASE`).
+#[derive(Debug, Serialize)]
+pub struct ProvisionAgentDefaultsResponse {
+    pub infrahub_agent_release_base: String,
+}
+
+pub async fn provision_agent_defaults(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<Json<ProvisionAgentDefaultsResponse>, ApiError> {
+    let (_, role) = resolve_session(&state, &headers).await?;
+    role.require(UserRole::Operator)?;
+    Ok(Json(ProvisionAgentDefaultsResponse {
+        infrahub_agent_release_base: state
+            .config
+            .default_infrahub_agent_release_base
+            .clone(),
+    }))
 }
 
 #[derive(Debug, Serialize)]
@@ -76,6 +108,8 @@ struct HostConn {
     ansible_host: String,
     ansible_user: String,
     ansible_port: u16,
+    /// Иначе по паролю Ansible падает, пока ключ хоста не в known_hosts (см. gather_facts).
+    ansible_ssh_common_args: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     ansible_ssh_private_key_file: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -85,10 +119,11 @@ struct HostConn {
 #[derive(Debug, Serialize)]
 struct ExtraVars {
     infrahub_api_base: String,
-    /// Абсолютный путь к бинарю на машине, где запущен ansible-playbook
-    infrahub_agent_local_binary: String,
+    /// База URL релиза (каталог), имя файла выбирается на ноде по ansible_architecture
+    infrahub_agent_release_base: String,
     infrahub_agent_install_path: String,
     infrahub_agent_state_dir: String,
+    infrahub_agent_enrollment_secret: String,
 }
 
 #[derive(Debug, Serialize)]
@@ -105,7 +140,14 @@ pub async fn provision_agent(
     let (_, role) = resolve_session(&state, &headers).await?;
     role.require(UserRole::Operator)?;
 
-    let req = validate_provision_request(body)?;
+    let enrollment_for_ansible = body
+        .enrollment_secret
+        .as_ref()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .unwrap_or_else(|| state.config.agent_enrollment_secret.clone());
+
+    let req = validate_provision_request(body, &state.config.default_infrahub_agent_release_base)?;
 
     let ansible_dir = ansible_directory();
     let playbook = ansible_dir.join("playbooks/install_agent.yml");
@@ -117,29 +159,14 @@ pub async fn provision_agent(
         ));
     }
 
-    let agent_bin = local_agent_binary_path().ok_or_else(|| {
-        ApiError::new(
-            axum::http::StatusCode::SERVICE_UNAVAILABLE,
-            "local agent binary not found: run `cargo build -p infrahub-agent` from repo root, or set INFRAHUB_AGENT_BINARY",
-        )
-    })?;
-
     let timeout_secs = state.config.provision_timeout_secs;
 
-    let bin_str = agent_bin
-        .to_str()
-        .ok_or_else(|| {
-            ApiError::new(
-                axum::http::StatusCode::INTERNAL_SERVER_ERROR,
-                "agent binary path is not valid UTF-8",
-            )
-        })?
-        .to_string();
     let extra = ExtraVars {
         infrahub_api_base: req.infrahub_api_base.clone(),
-        infrahub_agent_local_binary: bin_str,
+        infrahub_agent_release_base: req.infrahub_agent_release_base.clone(),
         infrahub_agent_install_path: "/usr/local/bin/infrahub-agent".into(),
         infrahub_agent_state_dir: "/var/lib/infrahub-agent".into(),
+        infrahub_agent_enrollment_secret: enrollment_for_ansible,
     };
 
     let run_result = run_ansible_playbook(
@@ -157,10 +184,7 @@ pub async fn provision_agent(
             let message = if ok {
                 "provision finished".into()
             } else {
-                format!(
-                    "ansible-playbook exited with code {:?}",
-                    out.exit_code
-                )
+                format!("ansible-playbook exited with code {:?}", out.exit_code)
             };
             Ok(Json(ProvisionAgentResponse {
                 ok,
@@ -191,7 +215,7 @@ pub async fn uninstall_agent(
     let (_, role) = resolve_session(&state, &headers).await?;
     role.require(UserRole::Operator)?;
 
-    let ssh = validate_uninstall_request(body)?;
+    let ureq = validate_uninstall_request(body)?;
 
     let ansible_dir = ansible_directory();
     let playbook = ansible_dir.join("playbooks/uninstall_agent.yml");
@@ -212,7 +236,7 @@ pub async fn uninstall_agent(
     let run_result = run_ansible_playbook(
         &ansible_dir,
         &playbook,
-        &ssh,
+        &ureq.ssh,
         &extra,
         Duration::from_secs(timeout_secs),
     )
@@ -221,14 +245,31 @@ pub async fn uninstall_agent(
     match run_result {
         Ok(out) => {
             let ok = out.exit_code == Some(0);
-            let message = if ok {
+            let mut message = if ok {
                 "uninstall finished".into()
             } else {
-                format!(
-                    "ansible-playbook exited with code {:?}",
-                    out.exit_code
-                )
+                format!("ansible-playbook exited with code {:?}", out.exit_code)
             };
+            if ok {
+                if let Some(aid) = ureq.remove_agent_id {
+                    match agents::Entity::delete_by_id(aid)
+                        .exec(&state.db)
+                        .await
+                    {
+                        Ok(del) if del.rows_affected > 0 => {
+                            message = "uninstall finished; agent removed from InfraHub".into();
+                        }
+                        Ok(_) => {
+                            tracing::warn!(%aid, "remove_agent_id: no agent row deleted");
+                        }
+                        Err(e) => {
+                            tracing::error!(error = %e, %aid, "remove_agent_id: db delete failed");
+                            message =
+                                "uninstall finished but failed to remove agent record".into();
+                        }
+                    }
+                }
+            }
             Ok(Json(ProvisionAgentResponse {
                 ok,
                 exit_code: out.exit_code,
@@ -276,6 +317,12 @@ struct SshTarget {
 struct ValidatedProvisionRequest {
     ssh: SshTarget,
     infrahub_api_base: String,
+    infrahub_agent_release_base: String,
+}
+
+struct ValidatedUninstallRequest {
+    ssh: SshTarget,
+    remove_agent_id: Option<Uuid>,
 }
 
 fn validate_ssh_target(
@@ -335,13 +382,29 @@ fn validate_ssh_target(
     })
 }
 
-fn validate_provision_request(body: ProvisionAgentRequest) -> Result<ValidatedProvisionRequest, ApiError> {
+fn validate_provision_request(
+    body: ProvisionAgentRequest,
+    server_default_release_base: &str,
+) -> Result<ValidatedProvisionRequest, ApiError> {
     let infrahub = body.infrahub_api_base.trim().to_string();
+    let release = body
+        .infrahub_agent_release_base
+        .as_ref()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .unwrap_or_else(|| server_default_release_base.trim().to_string());
+    let release = release.trim_end_matches('/').to_string();
 
     if !validate_infrahub_base(&infrahub) {
         return Err(ApiError::new(
             axum::http::StatusCode::BAD_REQUEST,
             "invalid infrahub_api_base",
+        ));
+    }
+    if !validate_infrahub_base(&release) {
+        return Err(ApiError::new(
+            axum::http::StatusCode::BAD_REQUEST,
+            "invalid infrahub_agent_release_base",
         ));
     }
 
@@ -356,17 +419,22 @@ fn validate_provision_request(body: ProvisionAgentRequest) -> Result<ValidatedPr
     Ok(ValidatedProvisionRequest {
         ssh,
         infrahub_api_base: infrahub,
+        infrahub_agent_release_base: release,
     })
 }
 
-fn validate_uninstall_request(body: UninstallAgentRequest) -> Result<SshTarget, ApiError> {
-    validate_ssh_target(
+fn validate_uninstall_request(body: UninstallAgentRequest) -> Result<ValidatedUninstallRequest, ApiError> {
+    let ssh = validate_ssh_target(
         body.host,
         body.ssh_user,
         body.ssh_port,
         body.private_key_pem,
         body.ssh_password,
-    )
+    )?;
+    Ok(ValidatedUninstallRequest {
+        ssh,
+        remove_agent_id: body.remove_agent_id,
+    })
 }
 
 fn validate_host(host: &str) -> bool {
@@ -384,10 +452,7 @@ fn validate_host(host: &str) -> bool {
         if label.is_empty() || label.len() > 63 {
             return false;
         }
-        if !label
-            .chars()
-            .all(|c| c.is_ascii_alphanumeric() || c == '-')
-        {
+        if !label.chars().all(|c| c.is_ascii_alphanumeric() || c == '-') {
             return false;
         }
     }
@@ -404,24 +469,6 @@ fn validate_ssh_user(u: &str) -> bool {
 
 fn validate_infrahub_base(s: &str) -> bool {
     !s.is_empty() && s.len() <= 2048 && !s.chars().any(|c| c.is_control())
-}
-
-/// Бинарь `infrahub-agent` из workspace (`target/debug|release`) или `INFRAHUB_AGENT_BINARY`.
-fn local_agent_binary_path() -> Option<PathBuf> {
-    if let Ok(p) = std::env::var("INFRAHUB_AGENT_BINARY") {
-        let pb = PathBuf::from(p.trim());
-        if pb.is_file() {
-            return pb.canonicalize().ok().or(Some(pb));
-        }
-    }
-    let ws_target = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../target");
-    for rel in ["debug/infrahub-agent", "release/infrahub-agent"] {
-        let cand = ws_target.join(rel);
-        if cand.is_file() {
-            return cand.canonicalize().ok().or(Some(cand));
-        }
-    }
-    None
 }
 
 /// Корень workspace (рядом с каталогом `backend/`).
@@ -476,7 +523,10 @@ fn ansible_playbook_executable() -> PathBuf {
             return canonicalize_if_file(venv_pb);
         }
     }
-    for c in ["/usr/bin/ansible-playbook", "/usr/local/bin/ansible-playbook"] {
+    for c in [
+        "/usr/bin/ansible-playbook",
+        "/usr/local/bin/ansible-playbook",
+    ] {
         if Path::new(c).is_file() {
             return PathBuf::from(c);
         }
@@ -495,6 +545,18 @@ async fn run_ansible_playbook(
     let tmp_path = tmp.path();
 
     let key_path = tmp_path.join("ssh_key.pem");
+    let known_hosts_path = tmp_path.join("_ansible_known_hosts");
+    std::fs::write(&known_hosts_path, b"").map_err(|e| format!("known_hosts file: {e}"))?;
+    let known_hosts_abs = std::fs::canonicalize(&known_hosts_path)
+        .unwrap_or_else(|_| known_hosts_path.clone());
+    let kh = known_hosts_abs.to_string_lossy();
+    // По паролю Ansible (часто paramiko) падает, пока host_key_checking включён; accept-new мало помогает.
+    let ssh_common = if ssh.ssh_password.is_some() {
+        format!("-o UserKnownHostsFile={kh} -o StrictHostKeyChecking=no")
+    } else {
+        format!("-o UserKnownHostsFile={kh} -o StrictHostKeyChecking=accept-new")
+    };
+
     let inventory_path = tmp_path.join("inventory.yml");
     let extra_path = tmp_path.join("extra_vars.yml");
 
@@ -502,6 +564,7 @@ async fn run_ansible_playbook(
         ansible_host: ssh.host.clone(),
         ansible_user: ssh.ssh_user.clone(),
         ansible_port: ssh.ssh_port,
+        ansible_ssh_common_args: ssh_common,
         ansible_ssh_private_key_file: None,
         ansible_password: None,
     };
@@ -534,8 +597,7 @@ async fn run_ansible_playbook(
         .await
         .map_err(|e| format!("write inventory: {e}"))?;
 
-    let extra_yaml =
-        serde_yaml::to_string(extra_vars).map_err(|e| format!("extra yaml: {e}"))?;
+    let extra_yaml = serde_yaml::to_string(extra_vars).map_err(|e| format!("extra yaml: {e}"))?;
     tokio::fs::write(&extra_path, extra_yaml)
         .await
         .map_err(|e| format!("write extra: {e}"))?;
@@ -585,12 +647,10 @@ async fn run_ansible_playbook(
         c
     };
 
-    cmd.stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .env(
-            "ANSIBLE_SSH_COMMON_ARGS",
-            "-o StrictHostKeyChecking=accept-new",
-        );
+    cmd.stdout(Stdio::piped()).stderr(Stdio::piped());
+    if ssh.ssh_password.is_some() {
+        cmd.env("ANSIBLE_HOST_KEY_CHECKING", "false");
+    }
     let cfg = ansible_dir.join("ansible.cfg");
     if cfg.is_file() {
         if let Some(s) = cfg.to_str() {

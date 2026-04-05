@@ -21,22 +21,22 @@ export function AppShell({
 }: Props) {
   return (
     <div className={cn('min-h-svh bg-background', className)}>
-      <div className="mx-auto max-w-6xl px-4 py-6 md:px-6">
+      <div className="mx-auto max-w-[1360px] px-5 py-3 md:px-6">
         {(title || actions || leading) && (
-          <header className="mb-6 flex flex-col gap-4 border-b border-border pb-4 sm:flex-row sm:items-start sm:justify-between">
+          <header className="mb-3 flex flex-col gap-2 border-b border-border/70 pb-2 sm:flex-row sm:items-start sm:justify-between">
             <div className="space-y-1">
               {leading && (
-                <div className="mb-2 text-sm text-muted-foreground">
+                <div className="mb-1 text-sm text-muted-foreground">
                   {leading}
                 </div>
               )}
               {title && (
-                <h1 className="text-2xl font-semibold tracking-tight">
+                <h1 className="text-xl font-semibold tracking-tight">
                   {title}
                 </h1>
               )}
               {subtitle && (
-                <p className="max-w-2xl text-sm text-muted-foreground">
+                <p className="max-w-3xl text-sm text-muted-foreground leading-relaxed">
                   {subtitle}
                 </p>
               )}

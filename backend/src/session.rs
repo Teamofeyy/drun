@@ -15,6 +15,20 @@ pub fn bearer(headers: &HeaderMap) -> Option<String> {
     Some(rest.trim().to_string())
 }
 
+/// Секрет для регистрации агента: `X-Infrahub-Enrollment`, иначе `Authorization: Bearer …`.
+pub fn enrollment_secret_from_headers(headers: &HeaderMap) -> Option<String> {
+    if let Some(raw) = headers
+        .get("X-Infrahub-Enrollment")
+        .and_then(|h| h.to_str().ok())
+    {
+        let t = raw.trim();
+        if !t.is_empty() {
+            return Some(t.to_string());
+        }
+    }
+    bearer(headers)
+}
+
 pub async fn resolve_session(
     state: &AppState,
     headers: &HeaderMap,

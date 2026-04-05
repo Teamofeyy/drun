@@ -6,6 +6,7 @@ use serde_json::{json, Value};
 use crate::{
     entity::{agents, task_results, tasks},
     error::ApiError,
+    handlers::mark_stale_agents_db,
     session::resolve_session,
     state::AppState,
 };
@@ -17,6 +18,7 @@ pub async fn topology_graph(
     headers: HeaderMap,
 ) -> Result<Json<Value>, ApiError> {
     let _ = resolve_session(&state, &headers).await?;
+    mark_stale_agents_db(&state.db).await;
 
     let agent_rows = agents::Entity::find()
         .order_by_asc(agents::Column::Name)
@@ -29,6 +31,47 @@ pub async fn topology_graph(
             )
         })?;
 
+    let running_rows = tasks::Entity::find()
+        .filter(tasks::Column::Status.eq("running"))
+        .all(&state.db)
+        .await
+        .map_err(|_| {
+            ApiError::new(
+                axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+                "database error",
+            )
+        })?;
+
+    let mut running_by_agent: HashMap<uuid::Uuid, usize> = HashMap::new();
+    for row in running_rows {
+        *running_by_agent.entry(row.agent_id).or_insert(0) += 1;
+    }
+
+    let latest_system_info_rows: Vec<(task_results::Model, Option<tasks::Model>)> =
+        task_results::Entity::find()
+            .find_also_related(tasks::Entity)
+            .filter(tasks::Column::Kind.eq("system_info"))
+            .filter(tasks::Column::Status.eq("done"))
+            .order_by_desc(task_results::Column::CreatedAt)
+            .all(&state.db)
+            .await
+            .map_err(|_| {
+                ApiError::new(
+                    axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+                    "database error",
+                )
+            })?;
+
+    let mut latest_system_info_by_agent: HashMap<uuid::Uuid, serde_json::Value> = HashMap::new();
+    for (result, task_opt) in latest_system_info_rows {
+        let Some(task) = task_opt else {
+            continue;
+        };
+        latest_system_info_by_agent
+            .entry(task.agent_id)
+            .or_insert(result.data);
+    }
+
     let mut nodes: Vec<Value> = Vec::new();
     let mut edges: Vec<Value> = Vec::new();
 
@@ -36,7 +79,7 @@ pub async fn topology_graph(
         "id": PLATFORM_ID,
         "label": "InfraHub",
         "type": "platform",
-        "sub": "REST API · очередь задач · SSE",
+        "sub": "REST API · WebSocket агентов · SSE дашборда",
     }));
 
     let mut site_ids: HashSet<String> = HashSet::new();
@@ -45,13 +88,36 @@ pub async fn topology_graph(
 
     for a in &agent_rows {
         let aid = format!("agent:{}", a.id);
+        let running = running_by_agent.get(&a.id).copied().unwrap_or(0);
+        let agent_status = if a.status == "online" && running > 0 {
+            "busy"
+        } else {
+            a.status.as_str()
+        };
+        let system_info = latest_system_info_by_agent.get(&a.id);
+        let hostname = system_info
+            .and_then(|data| data.get("hostname"))
+            .and_then(|v| v.as_str());
+        let os_long = system_info
+            .and_then(|data| data.get("os_long"))
+            .and_then(|v| v.as_str());
+        let primary_ip = system_info
+            .and_then(|data| data.get("all_ip_addresses"))
+            .and_then(|v| v.as_array())
+            .and_then(|items| items.first())
+            .and_then(|v| v.as_str());
+
         nodes.push(json!({
             "id": aid,
             "label": a.name,
             "type": "agent",
+            "agent_status": agent_status,
             "site": a.site,
             "segment": a.segment,
             "role_tag": a.role_tag,
+            "hostname": hostname,
+            "primary_ip": primary_ip,
+            "os_long": os_long,
         }));
 
         edges.push(json!({
@@ -59,7 +125,9 @@ pub async fn topology_graph(
             "target": PLATFORM_ID,
             "kind": "control_plane",
             "category": "control_plane",
-            "detail": "heartbeat, poll задач, complete/fail",
+            "detail": format!(
+                "status={agent_status}; WebSocket, редкий HTTP fallback к задачам, complete/fail"
+            ),
         }));
 
         let s = a.site.trim();
