@@ -1,5 +1,5 @@
-use axum::http::StatusCode;
 use crate::error::ApiError;
+use axum::http::StatusCode;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum UserRole {

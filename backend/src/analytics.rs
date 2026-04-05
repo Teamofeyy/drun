@@ -34,7 +34,6 @@ struct DailyAgg {
     durations: Vec<f64>,
 }
 
-
 pub async fn daily_metrics(
     State(state): State<AppState>,
     headers: HeaderMap,
