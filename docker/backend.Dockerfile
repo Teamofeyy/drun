@@ -33,4 +33,7 @@ ENV INFRAHUB_ANSIBLE_DIR=/opt/infrahub/ansible
 ENV INFRAHUB_AGENT_BINARY=/usr/local/lib/infrahub/infrahub-agent
 EXPOSE 8080
 
+HEALTHCHECK --interval=15s --timeout=5s --start-period=40s --retries=5 \
+  CMD wget -qO- http://127.0.0.1:8080/health > /dev/null || exit 1
+
 CMD ["infrahub-backend"]
