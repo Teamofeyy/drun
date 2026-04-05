@@ -50,13 +50,6 @@ services:
     image: ${DOCKER_USER:-local}/infrahub-frontend:latest
     ports:
       - "${FRONTEND_HTTP:-3000}:80"
-      - "${FRONTEND_HTTPS_BIND:-30443}:443"
-    environment:
-      CADDY_CONFIG_PATH: ${CADDY_CONFIG_PATH:-/etc/caddy/Caddyfile}
-      CADDY_SITE_ADDRESS: ${CADDY_SITE_ADDRESS:-}
-    volumes:
-      - caddy_data:/data
-      - caddy_config:/config
     depends_on:
       backend:
         condition: service_healthy
@@ -64,5 +57,3 @@ services:
 
 volumes:
   pgdata:
-  caddy_data:
-  caddy_config:

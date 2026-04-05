@@ -42,7 +42,7 @@ export function ProvisionAgentDialog({ open, onOpenChange }: Props) {
   useEffect(() => {
     if (open && typeof window !== 'undefined' && !apiBase) {
       const { hostname, origin } = window.location
-      // На проде API теперь идёт через тот же origin за Caddy; localhost пользователь заполняет вручную.
+      // На проде API с того же origin (nginx проксирует /api); localhost пользователь заполняет вручную.
       if (hostname !== 'localhost' && hostname !== '127.0.0.1') {
         setApiBase(origin)
       }

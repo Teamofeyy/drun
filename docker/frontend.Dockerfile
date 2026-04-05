@@ -8,11 +8,10 @@ RUN npm ci
 COPY frontend/ ./
 RUN npm run build
 
-FROM caddy:2.10-alpine
-COPY docker/Caddyfile /etc/caddy/Caddyfile
-COPY --from=build /app/dist /srv
+FROM nginx:1.27-alpine
+COPY docker/nginx/default.conf /etc/nginx/conf.d/default.conf
+COPY --from=build /app/dist /usr/share/nginx/html
 
 EXPOSE 80
-EXPOSE 443
 
-CMD ["sh", "-c", "exec caddy run --config ${CADDY_CONFIG_PATH:-/etc/caddy/Caddyfile} --adapter caddyfile"]
+CMD ["nginx", "-g", "daemon off;"]
