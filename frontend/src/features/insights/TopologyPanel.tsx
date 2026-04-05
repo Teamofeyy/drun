@@ -40,6 +40,7 @@ import {
   withoutProbes,
 } from './topologyUtils'
 import { ProvisionAgentDialog } from './ProvisionAgentDialog'
+import { UninstallAgentDialog } from './UninstallAgentDialog'
 
 const nodeColor: Record<string, string> = {
   platform: 'hsl(217 91% 56%)',
@@ -475,6 +476,7 @@ function TopologyFlowView({
 export function TopologyPanel() {
   const [showProbes, setShowProbes] = useState(true)
   const [provisionOpen, setProvisionOpen] = useState(false)
+  const [uninstallOpen, setUninstallOpen] = useState(false)
   const operate = canOperate()
 
   const graphQ = useQuery({
@@ -520,10 +522,16 @@ export function TopologyPanel() {
       </CardHeader>
       <CardContent className="space-y-3">
         {operate && (
-          <ProvisionAgentDialog
-            open={provisionOpen}
-            onOpenChange={setProvisionOpen}
-          />
+          <>
+            <ProvisionAgentDialog
+              open={provisionOpen}
+              onOpenChange={setProvisionOpen}
+            />
+            <UninstallAgentDialog
+              open={uninstallOpen}
+              onOpenChange={setUninstallOpen}
+            />
+          </>
         )}
         {renderTopologyToolbar(
           model,
@@ -532,6 +540,7 @@ export function TopologyPanel() {
           showRefreshing,
           operate,
           () => setProvisionOpen(true),
+          () => setUninstallOpen(true),
         )}
         {renderTopologyBody(model)}
       </CardContent>
@@ -546,18 +555,30 @@ function renderTopologyToolbar(
   showRefreshing: boolean,
   operate: boolean,
   onOpenProvision: () => void,
+  onOpenUninstall: () => void,
 ) {
   return (
     <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
       {operate && (
-        <Button
-          type="button"
-          variant="secondary"
-          size="sm"
-          onClick={onOpenProvision}
-        >
-          Установить агента…
-        </Button>
+        <>
+          <Button
+            type="button"
+            variant="secondary"
+            size="sm"
+            onClick={onOpenProvision}
+          >
+            Установить агента…
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="border-destructive/50 text-destructive hover:bg-destructive/10"
+            onClick={onOpenUninstall}
+          >
+            Снять агента с ноды…
+          </Button>
+        </>
       )}
       {model.tag === 'ready' && model.showProbeToggle && (
         <div className="flex max-w-xl flex-col gap-1 sm:flex-row sm:items-center sm:gap-3">

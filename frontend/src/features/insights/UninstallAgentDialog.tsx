@@ -2,9 +2,9 @@ import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { useEffect, useId, useState } from 'react'
 import { toast } from 'sonner'
 import {
-  provisionAgent,
-  type ProvisionAgentRequest,
+  uninstallAgent,
   type ProvisionAgentResponse,
+  type UninstallAgentRequest,
 } from '@/api'
 import { Button } from '@/components/ui/button'
 import {
@@ -25,13 +25,12 @@ type Props = {
   onOpenChange: (open: boolean) => void
 }
 
-export function ProvisionAgentDialog({ open, onOpenChange }: Props) {
+export function UninstallAgentDialog({ open, onOpenChange }: Props) {
   const qc = useQueryClient()
   const baseId = useId()
   const [host, setHost] = useState('')
   const [sshUser, setSshUser] = useState('')
   const [sshPort, setSshPort] = useState('22')
-  const [apiBase, setApiBase] = useState('')
   const [authKind, setAuthKind] = useState<'key' | 'password'>('key')
   const [privateKey, setPrivateKey] = useState('')
   const [sshPassword, setSshPassword] = useState('')
@@ -40,54 +39,23 @@ export function ProvisionAgentDialog({ open, onOpenChange }: Props) {
   )
 
   useEffect(() => {
-    if (open && typeof window !== 'undefined' && !apiBase) {
-      const h = window.location.hostname
-      // localhost в браузере ≠ адрес InfraHub для удалённого агента; API обычно :8080, не Vite :5173
-      if (h !== 'localhost' && h !== '127.0.0.1') {
-        setApiBase(`${window.location.protocol}//${h}:8080`)
-      }
-    }
-  }, [open, apiBase])
-
-  useEffect(() => {
     if (!open) return
     setLastResult(null)
   }, [open])
 
-  const provision = useMutation({
+  const run = useMutation({
     mutationFn: () => {
       const port = Number.parseInt(sshPort, 10)
       if (!Number.isFinite(port) || port < 1 || port > 65535) {
         return Promise.reject(new Error('Некорректный SSH-порт'))
       }
-      if (!host.trim() || !sshUser.trim() || !apiBase.trim()) {
-        return Promise.reject(
-          new Error('Заполните хост, SSH-пользователя и URL API'),
-        )
+      if (!host.trim() || !sshUser.trim()) {
+        return Promise.reject(new Error('Заполните хост и SSH-пользователя'))
       }
-      const targetHost = host.trim().toLowerCase()
-      const targetIsRemote =
-        targetHost !== 'localhost' &&
-        targetHost !== '127.0.0.1' &&
-        targetHost !== '::1'
-      const api = apiBase.trim()
-      if (
-        targetIsRemote &&
-        (/localhost/i.test(api) ||
-          /127\.0\.0\.1/.test(api) ||
-          /\[::1\]/.test(api))
-      ) {
-        return Promise.reject(
-          new Error(
-            'URL API указывает на localhost, а SSH-хост — удалённый сервер: с него до InfraHub так не подключиться. Укажите адрес API, доступный с целевой машины (публичный IP или DNS и порт, обычно :8080), и откройте порт на файрволе.',
-          ),
-        )
-      }
-      const body: ProvisionAgentRequest = {
+      const body: UninstallAgentRequest = {
         host: host.trim(),
         ssh_user: sshUser.trim(),
         ssh_port: port,
-        infrahub_api_base: apiBase.trim(),
       }
       if (authKind === 'key') {
         body.private_key_pem = privateKey.trim() || null
@@ -96,7 +64,7 @@ export function ProvisionAgentDialog({ open, onOpenChange }: Props) {
         body.ssh_password = sshPassword || null
         body.private_key_pem = null
       }
-      return provisionAgent(body)
+      return uninstallAgent(body)
     },
     onSuccess: (data) => {
       setLastResult(data)
@@ -121,16 +89,12 @@ export function ProvisionAgentDialog({ open, onOpenChange }: Props) {
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-h-[90vh] max-w-2xl overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>Установить агента по SSH</DialogTitle>
+          <DialogTitle>Снять агента с ноды</DialogTitle>
           <DialogDescription>
-            Данные и ключ отправляются один раз на сервер InfraHub и не
-            сохраняются. Бинарь агента копируется с машины backend из сборки
-            workspace (<code className="text-xs">target/…/infrahub-agent</code>
-            ). Нужны <code className="text-xs">ansible-core</code> и SSH с
-            backend до целевого хоста. Имя агента при регистрации берётся с ноды
-            (короткое имя хоста после{' '}
-            <code className="text-xs">gather_facts</code>,{' '}
-            <code className="text-xs">ansible_hostname</code>).
+            Останавливается unit <code className="text-xs">infrahub-agent</code>,
+            удаляются unit-файл, <code className="text-xs">/etc/default/infrahub-agent</code>,
+            бинарь и каталог состояния на целевом хосте. Запись агента в InfraHub не
+            удаляется — узел перестанет слать heartbeat.
           </DialogDescription>
         </DialogHeader>
         <div className="grid gap-4 py-2">
@@ -165,26 +129,8 @@ export function ProvisionAgentDialog({ open, onOpenChange }: Props) {
               max={65535}
               value={sshPort}
               onChange={(e) => setSshPort(e.target.value)}
-              className="max-w-40"
+              className="max-w-[10rem]"
             />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor={`${baseId}-api`}>URL API для агента</Label>
-            <Input
-              id={`${baseId}-api`}
-              value={apiBase}
-              onChange={(e) => setApiBase(e.target.value)}
-              placeholder="https://infrahub.example:8080"
-              autoComplete="off"
-            />
-            <p className="text-xs text-muted-foreground">
-              Адрес HTTP API InfraHub так, как его должен открыть{' '}
-              <strong>целевой сервер</strong> (не localhost с его стороны). Пример:{' '}
-              <code className="rounded bg-muted px-1 py-0.5 text-[0.65rem]">
-                http://&lt;ваш-сервер&gt;:8080
-              </code>
-              . Если UI открыт с localhost — поле нужно заполнить вручную.
-            </p>
           </div>
           <fieldset className="space-y-3 rounded-md border border-border p-3">
             <legend className="px-1 text-sm font-medium">Аутентификация SSH</legend>
@@ -212,7 +158,7 @@ export function ProvisionAgentDialog({ open, onOpenChange }: Props) {
             </div>
             {authKind === 'key' ? (
               <div className="space-y-2">
-                <Label htmlFor={`${baseId}-key`}>Приватный ключ (PEM)</Label>
+                <Label htmlFor={`${baseId}-key`}>Private key PEM</Label>
                 <Textarea
                   id={`${baseId}-key`}
                   value={privateKey}
@@ -222,16 +168,6 @@ export function ProvisionAgentDialog({ open, onOpenChange }: Props) {
                   className="font-mono text-xs"
                   autoComplete="off"
                 />
-                <p className="text-xs text-muted-foreground">
-                  <strong className="font-medium text-foreground/90">Как получить:</strong> скопируйте
-                  целиком <em>приватный</em> файл (без <code className="rounded bg-muted px-1">.pub</code>
-                  ), чаще всего{' '}
-                  <code className="rounded bg-muted px-1">~/.ssh/id_ed25519</code> или{' '}
-                  <code className="rounded bg-muted px-1">id_rsa</code> — например{' '}
-                  <code className="rounded bg-muted px-1">cat ~/.ssh/id_ed25519</code>. На ноде в{' '}
-                  <code className="rounded bg-muted px-1">authorized_keys</code> должен быть парный{' '}
-                  <em>публичный</em> ключ.
-                </p>
               </div>
             ) : (
               <div className="space-y-2">
@@ -274,10 +210,11 @@ export function ProvisionAgentDialog({ open, onOpenChange }: Props) {
           </Button>
           <Button
             type="button"
-            disabled={provision.isPending}
-            onClick={() => provision.mutate()}
+            variant="destructive"
+            disabled={run.isPending}
+            onClick={() => run.mutate()}
           >
-            {provision.isPending ? 'Выполняется…' : 'Запустить playbook'}
+            {run.isPending ? 'Выполняется…' : 'Снять агента'}
           </Button>
         </DialogFooter>
       </DialogContent>

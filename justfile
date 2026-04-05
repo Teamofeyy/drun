@@ -15,7 +15,6 @@ dev-front:
 # Варианты: (1) `cd ansible && uv sync` — бинарь будет ansible/.venv/bin/ansible-playbook (подхватится автоматически);
 # (2) INFRAHUB_ANSIBLE_USE_UV=1 и `uv run` из каталога с pyproject (INFRAHUB_UV_PROJECT_DIR, по умолчанию корень репо);
 # (3) INFRAHUB_ANSIBLE_PLAYBOOK=/полный/путь/ansible-playbook.
-# SSH по паролю: на controller обычно нужен `sshpass`.
 # Бинарь для provision: соберите `cargo build -p infrahub-agent` (workspace target/debug|release/infrahub-agent) или задайте INFRAHUB_AGENT_BINARY.
 # INFRAHUB_ANSIBLE_DIR — путь к каталогу ansible в репозитории;
 # INFRAHUB_PROVISION_TIMEOUT_SECS (по умолчанию 1800, clamp 60–7200).
@@ -31,10 +30,10 @@ dev-agent:
 
 # Stop all background processes
 dev-kill:
-  pkill -f "infrahub-backend" || true
-  pkill -f "npm run dev" || true
-  pkill -f "cargo run" || true
-  pkill -f "infrahub-agent" || true
+  pkill -f '[i]nfrahub-backend' || true
+  pkill -f '[n]pm run dev' || true
+  pkill -f '[c]argo run' || true
+  pkill -f '[i]nfrahub-agent' || true
 
 stats:
   cloc . --vcs=git --not-match-f='package-lock\.json'

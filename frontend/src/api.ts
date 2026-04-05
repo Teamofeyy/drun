@@ -113,8 +113,15 @@ export type ProvisionAgentRequest = {
   host: string
   ssh_user: string
   ssh_port?: number
-  agent_name: string
   infrahub_api_base: string
+  private_key_pem?: string | null
+  ssh_password?: string | null
+}
+
+export type UninstallAgentRequest = {
+  host: string
+  ssh_user: string
+  ssh_port?: number
   private_key_pem?: string | null
   ssh_password?: string | null
 }
@@ -132,6 +139,15 @@ export function provisionAgent(
   body: ProvisionAgentRequest,
 ): Promise<ProvisionAgentResponse> {
   return apiFetch('/api/v1/admin/provision-agent', {
+    method: 'POST',
+    body: JSON.stringify(body),
+  }) as Promise<ProvisionAgentResponse>
+}
+
+export function uninstallAgent(
+  body: UninstallAgentRequest,
+): Promise<ProvisionAgentResponse> {
+  return apiFetch('/api/v1/admin/uninstall-agent', {
     method: 'POST',
     body: JSON.stringify(body),
   }) as Promise<ProvisionAgentResponse>
@@ -196,6 +212,7 @@ export const api = {
     return apiFetch('/api/v1/topology/graph') as Promise<TopologyGraph>
   },
   provisionAgent,
+  uninstallAgent,
   machineDiff(agentId: string, fromTask: string, toTask: string) {
     return apiFetch(
       `/api/v1/agents/${agentId}/machine-diff?from_task=${encodeURIComponent(fromTask)}&to_task=${encodeURIComponent(toTask)}`,

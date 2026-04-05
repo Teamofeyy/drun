@@ -1,4 +1,4 @@
-//! Одноразовая установка агента по SSH: ansible-playbook во временном каталоге, секреты не персистятся.
+//! Установка и снятие агента по SSH: ansible-playbook во временном каталоге, секреты не персистятся.
 
 use std::collections::BTreeMap;
 use std::io::{ErrorKind, Write};
@@ -27,7 +27,6 @@ pub struct ProvisionAgentRequest {
     pub ssh_user: String,
     #[serde(default = "default_ssh_port")]
     pub ssh_port: u16,
-    pub agent_name: String,
     /// URL master API для агента; передаётся в systemd как есть (без подстановок на стороне backend).
     pub infrahub_api_base: String,
     #[serde(default)]
@@ -38,6 +37,19 @@ pub struct ProvisionAgentRequest {
 
 fn default_ssh_port() -> u16 {
     22
+}
+
+/// Удаление агента с удалённой ноды (только SSH, те же пути, что при install).
+#[derive(Debug, Deserialize)]
+pub struct UninstallAgentRequest {
+    pub host: String,
+    pub ssh_user: String,
+    #[serde(default = "default_ssh_port")]
+    pub ssh_port: u16,
+    #[serde(default)]
+    pub private_key_pem: Option<String>,
+    #[serde(default)]
+    pub ssh_password: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -73,9 +85,14 @@ struct HostConn {
 #[derive(Debug, Serialize)]
 struct ExtraVars {
     infrahub_api_base: String,
-    infrahub_agent_name: String,
     /// Абсолютный путь к бинарю на машине, где запущен ansible-playbook
     infrahub_agent_local_binary: String,
+    infrahub_agent_install_path: String,
+    infrahub_agent_state_dir: String,
+}
+
+#[derive(Debug, Serialize)]
+struct UninstallExtraVars {
     infrahub_agent_install_path: String,
     infrahub_agent_state_dir: String,
 }
@@ -88,7 +105,7 @@ pub async fn provision_agent(
     let (_, role) = resolve_session(&state, &headers).await?;
     role.require(UserRole::Operator)?;
 
-    let req = validate_request(body)?;
+    let req = validate_provision_request(body)?;
 
     let ansible_dir = ansible_directory();
     let playbook = ansible_dir.join("playbooks/install_agent.yml");
@@ -109,11 +126,27 @@ pub async fn provision_agent(
 
     let timeout_secs = state.config.provision_timeout_secs;
 
+    let bin_str = agent_bin
+        .to_str()
+        .ok_or_else(|| {
+            ApiError::new(
+                axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+                "agent binary path is not valid UTF-8",
+            )
+        })?
+        .to_string();
+    let extra = ExtraVars {
+        infrahub_api_base: req.infrahub_api_base.clone(),
+        infrahub_agent_local_binary: bin_str,
+        infrahub_agent_install_path: "/usr/local/bin/infrahub-agent".into(),
+        infrahub_agent_state_dir: "/var/lib/infrahub-agent".into(),
+    };
+
     let run_result = run_ansible_playbook(
         &ansible_dir,
         &playbook,
-        &req,
-        &agent_bin,
+        &req.ssh,
+        &extra,
         Duration::from_secs(timeout_secs),
     )
     .await;
@@ -150,6 +183,73 @@ pub async fn provision_agent(
     }
 }
 
+pub async fn uninstall_agent(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(body): Json<UninstallAgentRequest>,
+) -> Result<Json<ProvisionAgentResponse>, ApiError> {
+    let (_, role) = resolve_session(&state, &headers).await?;
+    role.require(UserRole::Operator)?;
+
+    let ssh = validate_uninstall_request(body)?;
+
+    let ansible_dir = ansible_directory();
+    let playbook = ansible_dir.join("playbooks/uninstall_agent.yml");
+    if !playbook.is_file() {
+        tracing::error!(path = %playbook.display(), "ansible uninstall playbook missing");
+        return Err(ApiError::new(
+            axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+            "ansible uninstall playbook not configured on server",
+        ));
+    }
+
+    let timeout_secs = state.config.provision_timeout_secs;
+    let extra = UninstallExtraVars {
+        infrahub_agent_install_path: "/usr/local/bin/infrahub-agent".into(),
+        infrahub_agent_state_dir: "/var/lib/infrahub-agent".into(),
+    };
+
+    let run_result = run_ansible_playbook(
+        &ansible_dir,
+        &playbook,
+        &ssh,
+        &extra,
+        Duration::from_secs(timeout_secs),
+    )
+    .await;
+
+    match run_result {
+        Ok(out) => {
+            let ok = out.exit_code == Some(0);
+            let message = if ok {
+                "uninstall finished".into()
+            } else {
+                format!(
+                    "ansible-playbook exited with code {:?}",
+                    out.exit_code
+                )
+            };
+            Ok(Json(ProvisionAgentResponse {
+                ok,
+                exit_code: out.exit_code,
+                stdout: truncate_output(&out.stdout),
+                stderr: truncate_output(&out.stderr),
+                message,
+            }))
+        }
+        Err(e) => {
+            tracing::error!(error = %e, "uninstall failed");
+            Ok(Json(ProvisionAgentResponse {
+                ok: false,
+                exit_code: None,
+                stdout: String::new(),
+                stderr: truncate_output(e.as_str()),
+                message: "uninstall failed".into(),
+            }))
+        }
+    }
+}
+
 struct AnsibleOutput {
     exit_code: Option<i32>,
     stdout: String,
@@ -165,21 +265,28 @@ fn truncate_output(s: &str) -> String {
     t
 }
 
-struct ValidatedRequest {
+struct SshTarget {
     host: String,
     ssh_user: String,
     ssh_port: u16,
-    agent_name: String,
-    infrahub_api_base: String,
     private_key_pem: Option<String>,
     ssh_password: Option<String>,
 }
 
-fn validate_request(body: ProvisionAgentRequest) -> Result<ValidatedRequest, ApiError> {
-    let host = body.host.trim().to_string();
-    let ssh_user = body.ssh_user.trim().to_string();
-    let agent_name = body.agent_name.trim().to_string();
-    let infrahub = body.infrahub_api_base.trim().to_string();
+struct ValidatedProvisionRequest {
+    ssh: SshTarget,
+    infrahub_api_base: String,
+}
+
+fn validate_ssh_target(
+    host: String,
+    ssh_user: String,
+    ssh_port: u16,
+    private_key_pem: Option<String>,
+    ssh_password: Option<String>,
+) -> Result<SshTarget, ApiError> {
+    let host = host.trim().to_string();
+    let ssh_user = ssh_user.trim().to_string();
 
     if !validate_host(&host) {
         return Err(ApiError::new(
@@ -193,26 +300,12 @@ fn validate_request(body: ProvisionAgentRequest) -> Result<ValidatedRequest, Api
             "invalid ssh_user",
         ));
     }
-    if agent_name.is_empty() || agent_name.len() > 256 || agent_name.chars().any(|c| c.is_control()) {
-        return Err(ApiError::new(
-            axum::http::StatusCode::BAD_REQUEST,
-            "invalid agent_name",
-        ));
-    }
-    if !validate_infrahub_base(&infrahub) {
-        return Err(ApiError::new(
-            axum::http::StatusCode::BAD_REQUEST,
-            "invalid infrahub_api_base",
-        ));
-    }
 
-    let key = body
-        .private_key_pem
+    let key = private_key_pem
         .as_ref()
         .map(|s| s.trim().to_string())
         .filter(|s| !s.is_empty());
-    let pass = body
-        .ssh_password
+    let pass = ssh_password
         .as_ref()
         .map(|s| s.trim().to_string())
         .filter(|s| !s.is_empty());
@@ -233,15 +326,47 @@ fn validate_request(body: ProvisionAgentRequest) -> Result<ValidatedRequest, Api
         _ => {}
     }
 
-    Ok(ValidatedRequest {
+    Ok(SshTarget {
         host,
         ssh_user,
-        ssh_port: body.ssh_port,
-        agent_name,
-        infrahub_api_base: infrahub,
+        ssh_port,
         private_key_pem: key,
         ssh_password: pass,
     })
+}
+
+fn validate_provision_request(body: ProvisionAgentRequest) -> Result<ValidatedProvisionRequest, ApiError> {
+    let infrahub = body.infrahub_api_base.trim().to_string();
+
+    if !validate_infrahub_base(&infrahub) {
+        return Err(ApiError::new(
+            axum::http::StatusCode::BAD_REQUEST,
+            "invalid infrahub_api_base",
+        ));
+    }
+
+    let ssh = validate_ssh_target(
+        body.host,
+        body.ssh_user,
+        body.ssh_port,
+        body.private_key_pem,
+        body.ssh_password,
+    )?;
+
+    Ok(ValidatedProvisionRequest {
+        ssh,
+        infrahub_api_base: infrahub,
+    })
+}
+
+fn validate_uninstall_request(body: UninstallAgentRequest) -> Result<SshTarget, ApiError> {
+    validate_ssh_target(
+        body.host,
+        body.ssh_user,
+        body.ssh_port,
+        body.private_key_pem,
+        body.ssh_password,
+    )
 }
 
 fn validate_host(host: &str) -> bool {
@@ -362,8 +487,8 @@ fn ansible_playbook_executable() -> PathBuf {
 async fn run_ansible_playbook(
     ansible_dir: &Path,
     playbook: &Path,
-    req: &ValidatedRequest,
-    agent_binary: &Path,
+    ssh: &SshTarget,
+    extra_vars: &impl Serialize,
     timeout_dur: Duration,
 ) -> Result<AnsibleOutput, String> {
     let tmp = TempDir::new().map_err(|e| format!("tempdir: {e}"))?;
@@ -374,14 +499,14 @@ async fn run_ansible_playbook(
     let extra_path = tmp_path.join("extra_vars.yml");
 
     let mut host_vars = HostConn {
-        ansible_host: req.host.clone(),
-        ansible_user: req.ssh_user.clone(),
-        ansible_port: req.ssh_port,
+        ansible_host: ssh.host.clone(),
+        ansible_user: ssh.ssh_user.clone(),
+        ansible_port: ssh.ssh_port,
         ansible_ssh_private_key_file: None,
         ansible_password: None,
     };
 
-    if let Some(ref pem) = req.private_key_pem {
+    if let Some(ref pem) = ssh.private_key_pem {
         let mut f = std::fs::File::create(&key_path).map_err(|e| format!("key file: {e}"))?;
         f.write_all(pem.as_bytes())
             .map_err(|e| format!("key write: {e}"))?;
@@ -395,7 +520,7 @@ async fn run_ansible_playbook(
             std::fs::set_permissions(&key_path, p).map_err(|e| format!("chmod key: {e}"))?;
         }
         host_vars.ansible_ssh_private_key_file = Some(key_path.to_string_lossy().to_string());
-    } else if let Some(ref pw) = req.ssh_password {
+    } else if let Some(ref pw) = ssh.ssh_password {
         host_vars.ansible_password = Some(pw.clone());
     }
 
@@ -409,18 +534,8 @@ async fn run_ansible_playbook(
         .await
         .map_err(|e| format!("write inventory: {e}"))?;
 
-    let bin_str = agent_binary
-        .to_str()
-        .ok_or_else(|| "agent binary path is not valid UTF-8".to_string())?
-        .to_string();
-    let extra = ExtraVars {
-        infrahub_api_base: req.infrahub_api_base.clone(),
-        infrahub_agent_name: req.agent_name.clone(),
-        infrahub_agent_local_binary: bin_str,
-        infrahub_agent_install_path: "/usr/local/bin/infrahub-agent".into(),
-        infrahub_agent_state_dir: "/var/lib/infrahub-agent".into(),
-    };
-    let extra_yaml = serde_yaml::to_string(&extra).map_err(|e| format!("extra yaml: {e}"))?;
+    let extra_yaml =
+        serde_yaml::to_string(extra_vars).map_err(|e| format!("extra yaml: {e}"))?;
     tokio::fs::write(&extra_path, extra_yaml)
         .await
         .map_err(|e| format!("write extra: {e}"))?;
@@ -489,7 +604,7 @@ async fn run_ansible_playbook(
         .map_err(|e| {
             if e.kind() == ErrorKind::NotFound {
                 format!(
-                    "Ansible launcher not found (tried: {err_hint}). Install ansible (e.g. `uv sync` in ansible/ or your uv project), set INFRAHUB_ANSIBLE_PLAYBOOK to .venv/bin/ansible-playbook, or INFRAHUB_ANSIBLE_USE_UV=1 with INFRAHUB_UV_PROJECT_DIR. SSH password needs `sshpass` on the controller."
+                    "Ansible launcher not found (tried: {err_hint}). Install ansible (e.g. `uv sync` in ansible/ or your uv project), set INFRAHUB_ANSIBLE_PLAYBOOK to .venv/bin/ansible-playbook, or INFRAHUB_ANSIBLE_USE_UV=1 with INFRAHUB_UV_PROJECT_DIR."
                 )
             } else {
                 format!("ansible-playbook spawn: {e}")

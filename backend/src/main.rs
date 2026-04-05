@@ -105,6 +105,10 @@ async fn main() -> anyhow::Result<()> {
             "/api/v1/admin/provision-agent",
             post(provisioning::provision_agent),
         )
+        .route(
+            "/api/v1/admin/uninstall-agent",
+            post(provisioning::uninstall_agent),
+        )
         .layer(CorsLayer::permissive())
         .layer(TraceLayer::new_for_http())
         .with_state(state);

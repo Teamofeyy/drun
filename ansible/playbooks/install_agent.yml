@@ -4,6 +4,7 @@
 - name: Install InfraHub agent
   hosts: all
   become: true
+  gather_facts: true
   vars:
     infrahub_agent_install_path: /usr/local/bin/infrahub-agent
     infrahub_agent_state_dir: /var/lib/infrahub-agent
